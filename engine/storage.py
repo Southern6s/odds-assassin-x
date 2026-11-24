@@ -80,6 +80,20 @@ class SQLiteMarketStore:
                     ON candlestick_snapshots(ticker, period_interval, end_period_ts);
                 CREATE INDEX IF NOT EXISTS idx_candles_capture_time
                     ON candlestick_snapshots(captured_at);
+
+                CREATE TABLE IF NOT EXISTS trade_snapshots (
+                    id INTEGER PRIMARY KEY,
+                    trade_id TEXT NOT NULL UNIQUE,
+                    ticker TEXT NOT NULL,
+                    created_time TEXT NOT NULL,
+                    captured_at TEXT NOT NULL,
+                    schema_version INTEGER NOT NULL,
+                    payload_json TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_trades_ticker_created
+                    ON trade_snapshots(ticker, created_time);
+                CREATE INDEX IF NOT EXISTS idx_trades_created
+                    ON trade_snapshots(created_time);
                 """
             )
 
@@ -148,6 +162,59 @@ class SQLiteMarketStore:
                 except (KeyError, TypeError) as exc:
                     raise ValueError("malformed candlestick snapshot record") from exc
         return StoreWriteReport(inserted, duplicates)
+
+
+    def write_trade_snapshots(
+        self, records: Iterable[dict[str, Any]]
+    ) -> StoreWriteReport:
+        """Insert trade prints once by exchange trade_id; preserve original payload."""
+        inserted = duplicates = 0
+        with self._connect() as connection:
+            for record in records:
+                try:
+                    trade = record["trade"]
+                    trade_id = trade["trade_id"]
+                    ticker = trade["ticker"]
+                    created_time = trade["created_time"]
+                    captured_at = record["captured_at"]
+                    version = record["schema_version"]
+                    if (
+                        not isinstance(trade_id, str) or not trade_id
+                        or not isinstance(ticker, str) or not ticker
+                        or not isinstance(created_time, str)
+                        or not isinstance(captured_at, str)
+                    ):
+                        raise ValueError("invalid trade snapshot identity")
+                    cursor = connection.execute(
+                        """INSERT OR IGNORE INTO trade_snapshots
+                           (trade_id, ticker, created_time, captured_at,
+                            schema_version, payload_json)
+                           VALUES (?, ?, ?, ?, ?, ?)""",
+                        (trade_id, ticker, created_time, captured_at,
+                         version, self._json(record)),
+                    )
+                    if cursor.rowcount:
+                        inserted += 1
+                    else:
+                        duplicates += 1
+                except (KeyError, TypeError) as exc:
+                    raise ValueError("malformed trade snapshot record") from exc
+        return StoreWriteReport(inserted, duplicates)
+
+    def trade_snapshot_count(self) -> int:
+        with self._connect() as connection:
+            return connection.execute("SELECT COUNT(*) FROM trade_snapshots").fetchone()[0]
+
+    def trades_for_market(self, ticker: str, *, limit: int = 10000) -> list[dict[str, Any]]:
+        if not 1 <= limit <= 100000:
+            raise ValueError("limit must be between 1 and 100000")
+        with self._connect() as connection:
+            rows = connection.execute(
+                """SELECT payload_json FROM trade_snapshots
+                   WHERE ticker = ? ORDER BY created_time ASC LIMIT ?""",
+                (ticker, limit),
+            ).fetchall()
+        return [json.loads(row["payload_json"]) for row in rows]
 
     def market_snapshot_count(self) -> int:
         with self._connect() as connection:

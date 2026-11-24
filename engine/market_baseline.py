@@ -51,16 +51,17 @@ def evaluate_market_baseline(
     items = list(rows)
     if not items:
         raise ValueError("at least one research row is required")
-    seen: set[str] = set()
+    seen: set[tuple[str, datetime]] = set()
     scored: list[tuple[float, int, float | None]] = []
     for row in items:
         ticker = row.get("market_ticker")
         if not isinstance(ticker, str) or not ticker:
             raise ValueError("each row requires market_ticker")
-        if ticker in seen:
-            raise ValueError(f"duplicate market_ticker: {ticker}")
-        seen.add(ticker)
         forecast_at = _time(row.get("forecast_at"), "forecast_at")
+        key = (ticker, forecast_at)
+        if key in seen:
+            raise ValueError(f"duplicate market_ticker and forecast_at: {ticker}")
+        seen.add(key)
         resolved_at = _time(row.get("resolved_at"), "resolved_at")
         if forecast_at >= resolved_at:
             raise ValueError("forecast_at must precede resolved_at")

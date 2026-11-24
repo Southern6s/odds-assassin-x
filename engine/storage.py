@@ -11,6 +11,7 @@ import json
 from pathlib import Path
 import sqlite3
 from typing import Any, Iterable
+from uuid import uuid4
 
 
 @dataclass(frozen=True)
@@ -24,12 +25,23 @@ class SQLiteMarketStore:
 
     def __init__(self, database_path: str | Path):
         self.database_path = str(database_path)
-        if self.database_path != ":memory:":
+        self._uri = self.database_path == ":memory:"
+        self._connect_target = (
+            f"file:odds_assassin_x_{uuid4().hex}?mode=memory&cache=shared"
+            if self._uri else self.database_path
+        )
+        self._anchor = (
+            sqlite3.connect(self._connect_target, uri=True, timeout=30)
+            if self._uri else None
+        )
+        if not self._uri:
             Path(self.database_path).parent.mkdir(parents=True, exist_ok=True)
         self._initialize()
 
     def _connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(self.database_path, timeout=30)
+        connection = sqlite3.connect(
+            self._connect_target, uri=self._uri, timeout=30
+        )
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA foreign_keys = ON")
         connection.execute("PRAGMA busy_timeout = 30000")
@@ -115,7 +127,12 @@ class SQLiteMarketStore:
                     end_ts = candle["end_period_ts"]
                     captured_at = record["captured_at"]
                     version = record["schema_version"]
-                    if not isinstance(ticker, str) or not ticker or not isinstance(captured_at, str):
+                    if (
+                        not isinstance(ticker, str) or not ticker
+                        or not isinstance(captured_at, str)
+                        or interval not in (1, 60, 1440)
+                        or not isinstance(end_ts, int) or end_ts <= 0
+                    ):
                         raise ValueError("invalid candlestick snapshot identity")
                     cursor = connection.execute(
                         """INSERT OR IGNORE INTO candlestick_snapshots

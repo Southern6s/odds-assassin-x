@@ -50,6 +50,16 @@ class KalshiClientTests(unittest.TestCase):
         self.assertTrue(opener.call_args_list[0].args[0].full_url.endswith("/markets?limit=1000"))
         self.assertTrue(opener.call_args_list[1].args[0].full_url.endswith("/historical/markets?limit=1000"))
 
+    def test_categorized_markets_use_series_metadata(self):
+        opener = Mock(side_effect=[
+            FakeResponse({"series": [{"ticker": "SERIES-A", "category": "Sports"}]}),
+            FakeResponse({"markets": [{"ticker": "M1", "series_ticker": "SERIES-A"}], "cursor": ""}),
+            FakeResponse({"markets": [], "cursor": ""}),
+        ])
+        client = KalshiPublicClient(opener=opener)
+        markets = list(client.iter_categorized_markets())
+        self.assertEqual(markets[0]["category"], "Sports")
+
     def test_max_pages_is_an_explicit_safe_limit(self):
         client, opener = self.client_with_pages([
             {"markets": [{"ticker": "A"}], "cursor": "next"},

@@ -15,6 +15,7 @@ from .kalshi_data import append_jsonl, snapshot_record
 @dataclass
 class CollectionReport:
     captured_at: str
+    scanned: int = 0
     written: int = 0
     rejected: int = 0
     duplicates: int = 0
@@ -75,6 +76,13 @@ def collect_from_kalshi(
         for market in client.iter_categorized_markets(
             limit=limit, max_pages_per_tier=max_pages_per_tier
         ):
+            report.scanned += 1
+            if report.scanned % 1000 == 0:
+                print(
+                    f"Catalog discovery progress: scanned={report.scanned}, "
+                    f"unique={len(seen)}, duplicates={report.duplicates}",
+                    flush=True,
+                )
             ticker = market.get("ticker")
             if isinstance(ticker, str) and ticker:
                 if ticker in seen:

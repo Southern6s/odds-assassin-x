@@ -129,8 +129,11 @@ def collect_candlesticks(
         raise ValueError("period_interval must be 1, 60, or 1440")
     if chunk_seconds <= 0:
         raise ValueError("chunk_seconds must be positive")
+    period_seconds = period_interval * 60
+    if chunk_seconds < period_seconds:
+        raise ValueError("chunk_seconds must be at least one candle period")
     # Kalshi rejects candle windows spanning more than 5,000 periods.
-    max_window_seconds = period_interval * 60 * 5000
+    max_window_seconds = period_seconds * 5000
     effective_chunk_seconds = min(chunk_seconds, max_window_seconds)
 
     timestamp = datetime.now(timezone.utc)
@@ -151,7 +154,6 @@ def collect_candlesticks(
                 market_records: list[dict[str, Any]] = []
                 seen_periods: set[int] = set()
                 chunk_start = start_ts
-                period_seconds = period_interval * 60
                 while chunk_start < end_ts:
                     chunk_end = min(chunk_start + effective_chunk_seconds, end_ts)
                     if archived:

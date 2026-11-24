@@ -106,7 +106,7 @@ def write_jsonl_atomic(rows: Iterable[dict[str, Any]], output_path: str | Path) 
             for row in rows:
                 handle.write(json.dumps(row, separators=(",", ":"), sort_keys=True,
                                         allow_nan=False))
-                handle.write("\\n")
+                handle.write("\n")
                 count += 1
         temporary.replace(destination)
     except Exception:
@@ -143,7 +143,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         written = write_jsonl_atomic(rows, args.output)
     except (OSError, ValueError) as exc:
-        parser.exit(2, f"Dataset build failed: {exc}\\n")
+        parser.exit(2, f"Dataset build failed: {exc}\n")
 
     print(json.dumps({
         "output": str(args.output),

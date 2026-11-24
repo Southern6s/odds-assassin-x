@@ -7,6 +7,7 @@ from engine.kalshi_client import (
     KalshiAPIError,
     KalshiPublicClient,
     enrich_market_category,
+    enrich_market_series,
     series_category_map,
 )
 
@@ -116,6 +117,26 @@ class KalshiClientTests(unittest.TestCase):
             client.get_historical_market_candlesticks(
                 market_ticker="M1", start_ts=200, end_ts=100
             )
+
+    def test_market_series_enrichment_uses_longest_authoritative_event_prefix(self):
+        series = [
+            {"ticker": "KXBTC", "category": "Crypto"},
+            {"ticker": "KXBTC15M", "category": "Crypto Short Term"},
+        ]
+        result = enrich_market_series(
+            {"ticker": "KXBTC15M-26NOV240615-15", "event_ticker": "KXBTC15M-26NOV240615"},
+            series,
+        )
+        self.assertEqual(result["series_ticker"], "KXBTC15M")
+        self.assertEqual(result["category"], "Crypto Short Term")
+
+    def test_market_series_enrichment_does_not_guess_unknown_prefix(self):
+        result = enrich_market_series(
+            {"ticker": "UNKNOWN-1", "event_ticker": "UNKNOWN-EVENT"},
+            [{"ticker": "KXBTC", "category": "Crypto"}],
+        )
+        self.assertNotIn("series_ticker", result)
+        self.assertNotIn("category", result)
 
     def test_series_categories_enrich_without_title_guessing(self):
         mapping = series_category_map([

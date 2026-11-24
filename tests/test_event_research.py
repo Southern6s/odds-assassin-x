@@ -16,11 +16,11 @@ def raw_trade(trade_id="T1", ticker="MKT-1", created="2026-01-01T00:15:00Z",
 
 
 class EventTradeResearchTests(unittest.TestCase):
-    def test_aggregates_event_buckets_and_preserves_all_side_combinations(self):
+    def test_aggregates_event_buckets_with_documented_direction_semantics(self):
         raws = [
             raw_trade("A", "M1", outcome="yes", book="bid", count="2.0"),
-            raw_trade("B", "M2", outcome="yes", book="ask", count="3.0", block=True),
-            raw_trade("C", "M1", outcome="no", book="bid", count="4.0"),
+            raw_trade("B", "M2", outcome="no", book="ask", count="3.0", block=True),
+            raw_trade("C", "M1", outcome="yes", book="bid", count="4.0"),
             raw_trade("D", "M2", outcome="no", book="ask", count="1.0"),
         ]
         trades = [normalize_trade(item) for item in raws]
@@ -36,10 +36,10 @@ class EventTradeResearchTests(unittest.TestCase):
         self.assertEqual(row["contract_volume"], 10.0)
         self.assertEqual(row["block_contract_volume"], 3.0)
         self.assertEqual(row["market_count"], 2)
-        self.assertEqual(row["yes_bid_contracts"], 2.0)
-        self.assertEqual(row["yes_ask_contracts"], 3.0)
-        self.assertEqual(row["no_bid_contracts"], 4.0)
-        self.assertEqual(row["no_ask_contracts"], 1.0)
+        self.assertEqual(row["yes_bid_contracts"], 6.0)
+        self.assertEqual(row["yes_ask_contracts"], 0.0)
+        self.assertEqual(row["no_bid_contracts"], 0.0)
+        self.assertEqual(row["no_ask_contracts"], 4.0)
         self.assertAlmostEqual(row["yes_vwap"], 0.42)
 
     def test_as_of_cutoff_unknown_markets_and_duplicate_ids(self):

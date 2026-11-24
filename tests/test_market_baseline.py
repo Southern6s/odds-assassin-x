@@ -30,6 +30,12 @@ class MarketBaselineTests(unittest.TestCase):
         self.assertTrue(report["paper_only"])
         self.assertFalse(report["live_trading"])
 
+    def test_allows_same_market_at_distinct_forecast_cutoffs(self):
+        later = dict(self.rows[0], forecast_at="2026-01-01T06:00:00Z",
+                     resolved_at="2026-01-02T00:00:00Z")
+        report = evaluate_market_baseline([self.rows[0], later])
+        self.assertEqual(report["rows_total"], 2)
+
     def test_no_midpoints_returns_null_scores_not_fake_zeroes(self):
         rows = [dict(self.rows[2])]
         report = evaluate_market_baseline(rows)

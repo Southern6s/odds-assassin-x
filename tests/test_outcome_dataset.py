@@ -98,6 +98,70 @@ class OutcomeDatasetTests(unittest.TestCase):
                 [market, market], self.features, forecast_at=self.cutoff
             )
 
+    def test_attaches_latest_pre_forecast_market_quote_for_baseline(self):
+        market = {
+            "ticker": "MKT-YES", "event_ticker": "EV1",
+            "result": "yes", "settlement_ts": "2026-01-01T05:00:00Z",
+        }
+        snapshots = [
+            {
+                "captured_at": "2026-01-01T01:30:00Z",
+                "market": {"ticker": "MKT-YES", "yes_bid": 0.40, "yes_ask": 0.50,
+                           "no_bid": 0.50, "no_ask": 0.60},
+            },
+            {
+                "captured_at": "2026-01-01T02:30:00Z",
+                "market": {"ticker": "MKT-YES", "yes_bid": 0.45, "yes_ask": 0.55,
+                           "no_bid": 0.45, "no_ask": 0.55},
+            },
+            {
+                "captured_at": "2026-01-01T03:01:00Z",
+                "market": {"ticker": "MKT-YES", "yes_bid": 0.90, "yes_ask": 0.95},
+            },
+        ]
+        rows = build_resolved_market_dataset(
+            [market], self.features, forecast_at=self.cutoff,
+            market_snapshots=snapshots, max_quote_age_seconds=3600,
+        )
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["market_yes_bid"], 0.45)
+        self.assertEqual(rows[0]["market_yes_ask"], 0.55)
+        self.assertEqual(rows[0]["market_yes_mid"], 0.50)
+        self.assertEqual(rows[0]["quote_captured_at"], "2026-01-01T02:30:00+00:00")
+        self.assertEqual(rows[0]["quote_age_seconds"], 1800.0)
+
+    def test_excludes_stale_and_future_market_quotes(self):
+        market = {
+            "ticker": "MKT-YES", "event_ticker": "EV1",
+            "result": "yes", "settlement_ts": "2026-01-01T05:00:00Z",
+        }
+        snapshots = [
+            {"captured_at": "2025-12-31T00:00:00Z",
+             "market": {"ticker": "MKT-YES", "yes_bid": 0.2, "yes_ask": 0.3}},
+            {"captured_at": "2026-01-01T03:01:00Z",
+             "market": {"ticker": "MKT-YES", "yes_bid": 0.9, "yes_ask": 0.95}},
+        ]
+        rows = build_resolved_market_dataset(
+            [market], self.features, forecast_at=self.cutoff,
+            market_snapshots=snapshots, max_quote_age_seconds=300,
+        )
+        self.assertNotIn("market_yes_mid", rows[0])
+
+    def test_rejects_crossed_decision_time_quotes(self):
+        market = {
+            "ticker": "MKT-YES", "event_ticker": "EV1",
+            "result": "yes", "settlement_ts": "2026-01-01T05:00:00Z",
+        }
+        snapshots = [{
+            "captured_at": "2026-01-01T02:59:00Z",
+            "market": {"ticker": "MKT-YES", "yes_bid": 0.6, "yes_ask": 0.5},
+        }]
+        with self.assertRaises(ValueError):
+            build_resolved_market_dataset(
+                [market], self.features, forecast_at=self.cutoff,
+                market_snapshots=snapshots,
+            )
+
     def test_rejects_invalid_max_age(self):
         with self.assertRaises(ValueError):
             build_resolved_market_dataset(

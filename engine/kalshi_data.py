@@ -40,6 +40,7 @@ def normalize_market(market: dict[str, Any]) -> dict[str, Any]:
     normalized = {
         "ticker": ticker,
         "event_ticker": market.get("event_ticker"),
+        "series_ticker": market.get("series_ticker"),
         "title": market.get("title") or market.get("subtitle"),
         "category": market.get("category"),
         "status": market.get("status"),

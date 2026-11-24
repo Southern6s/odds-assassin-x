@@ -42,7 +42,7 @@ class TradeMarketHydratorTests(unittest.TestCase):
         with TemporaryDirectory() as folder:
             trades = Path(folder) / "trades.jsonl"
             output = Path(folder) / "markets.jsonl"
-            trades.write_text(json.dumps({"trade": {"ticker": "MKT-1"}}) + "\\n")
+            trades.write_text(json.dumps({"trade": {"ticker": "MKT-1"}}) + "\n")
             client = FakeClient()
             with patch.object(trade_market_hydrator, "KalshiPublicClient", return_value=client):
                 result = trade_market_hydrator.main([

@@ -87,6 +87,8 @@ def build_event_trade_features(
         outcome_side, book_side = trade.get("taker_outcome_side"), trade.get("taker_book_side")
         if outcome_side not in ("yes", "no") or book_side not in ("bid", "ask"):
             raise ValueError("invalid taker outcome/book side")
+        if (outcome_side == "yes") != (book_side == "bid"):
+            raise ValueError("inconsistent taker outcome/book side")
         block = trade.get("is_block_trade")
         if not isinstance(block, bool):
             raise ValueError("is_block_trade must be boolean")

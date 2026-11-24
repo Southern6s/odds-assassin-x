@@ -113,3 +113,25 @@ small test run. Kalshi's documented live endpoint is `GET /markets/trades`;
 archived trades use `GET /historical/trades`. The collector is unauthenticated,
 read-only, and does not place orders. Local JSONL is research storage, not
 durable hosted storage.
+
+### Walk-forward model evaluation (paper-only)
+
+The evaluator expects a combined research JSONL file containing multiple
+historical `forecast_at` cutoffs. It fits a fresh logistic model at each test
+window using only rows whose outcomes had settled by that window's first
+forecast timestamp, then scores later observations against both a neutral
+50% forecast and the decision-time market midpoint.
+
+```bash
+python -m engine.walk_forward \
+  --dataset data/multi_cutoff_research.jsonl \
+  --features yes_bid_contracts,no_bid_contracts,contract_volume \
+  --min-train-size 100 \
+  --test-cutoffs 1
+```
+
+Cutoffs are kept intact as groups so observations from the same forecast
+timestamp cannot be split between training and testing. The report aggregates
+Brier score and log loss across folds. This evaluator does not simulate fills,
+fees, slippage, or orders. One-cutoff datasets cannot produce a walk-forward
+result; collect or construct multiple historical point-in-time snapshots first.

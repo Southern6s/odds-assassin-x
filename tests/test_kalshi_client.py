@@ -119,6 +119,20 @@ class KalshiClientTests(unittest.TestCase):
             {"ticker": "M3", "category": "Existing", "series_ticker": "SERIES-A"}, mapping
         )["category"], "Existing")
 
+    def test_rate_limit_retries_and_honors_retry_after(self):
+        opener = Mock(side_effect=[
+            HTTPError(
+                "https://example.test/markets", 429, "Too Many Requests",
+                {"Retry-After": "2"}, None,
+            ),
+            FakeResponse({"markets": [{"ticker": "A"}], "cursor": ""}),
+        ])
+        sleeper = Mock()
+        client = KalshiPublicClient(opener=opener, sleeper=sleeper)
+        self.assertEqual(list(client.iter_markets(max_pages=1)), [{"ticker": "A"}])
+        self.assertEqual(opener.call_count, 2)
+        sleeper.assert_called_once_with(2.0)
+
     def test_http_error_is_wrapped(self):
         opener = Mock(side_effect=HTTPError(
             "https://example.test/markets", 503, "Unavailable", {}, None

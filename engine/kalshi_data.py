@@ -44,6 +44,9 @@ def normalize_market(market: dict[str, Any]) -> dict[str, Any]:
         "title": market.get("title") or market.get("subtitle"),
         "category": market.get("category"),
         "status": market.get("status"),
+        "market_type": market.get("market_type"),
+        "result": market.get("result"),
+        "settlement_ts": market.get("settlement_ts"),
         "yes_bid": _decimal_price(market, "yes_bid_dollars", "yes_bid"),
         "yes_ask": _decimal_price(market, "yes_ask_dollars", "yes_ask"),
         "no_bid": _decimal_price(market, "no_bid_dollars", "no_bid"),
@@ -53,6 +56,7 @@ def normalize_market(market: dict[str, Any]) -> dict[str, Any]:
         "open_interest": market.get("open_interest_fp", market.get("open_interest")),
         "close_time": market.get("close_time"),
         "expiration_time": market.get("expiration_time"),
+        "expected_expiration_time": market.get("expected_expiration_time"),
     }
     for side in ("yes", "no"):
         bid, ask = normalized[f"{side}_bid"], normalized[f"{side}_ask"]

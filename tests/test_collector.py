@@ -65,6 +65,9 @@ class CollectorTests(unittest.TestCase):
             def __init__(self):
                 self.calls = []
 
+            def get_historical_cutoff(self):
+                return {"market_settled_ts": "2026-11-01T00:00:00Z"}
+
             def get_market_candlesticks(self, **kwargs):
                 self.calls.append(kwargs)
                 return {"candlesticks": [{
@@ -92,10 +95,47 @@ class CollectorTests(unittest.TestCase):
         self.assertEqual(rows[0]["candle"]["price"]["close"], 0.45)
 
 
+
+    def test_candlestick_collection_routes_each_market_by_live_settlement_cutoff(self):
+        class TierClient:
+            def __init__(self):
+                self.live = []
+                self.archive = []
+
+            def get_historical_cutoff(self):
+                return {"market_settled_ts": "2026-11-01T00:00:00Z"}
+
+            def get_market_candlesticks(self, **kwargs):
+                self.live.append(kwargs["market_ticker"])
+                return {"candlesticks": []}
+
+            def get_historical_market_candlesticks(self, **kwargs):
+                self.archive.append(kwargs["market_ticker"])
+                return {"candlesticks": []}
+
+        client = TierClient()
+        markets = [
+            {"ticker": "OLD", "result": "yes", "settlement_ts": "2026-10-15T12:00:00Z"},
+            {"ticker": "NEW", "result": "no", "settlement_ts": "2026-11-10T12:00:00Z", "series_ticker": "S"},
+            {"ticker": "ACTIVE", "status": "active", "series_ticker": "S"},
+        ]
+        with TemporaryDirectory() as folder:
+            report = collect_candlesticks(
+                client, markets, Path(folder) / "candles.jsonl",
+                start_ts=100, end_ts=200, period_interval=1,
+            )
+        self.assertEqual(client.archive, ["OLD"])
+        self.assertEqual(client.live, ["NEW", "ACTIVE"])
+        self.assertEqual(report.markets_requested, 3)
+        self.assertEqual(report.markets_skipped, 0)
+
     def test_candlestick_collection_enforces_exchange_5000_period_cap(self):
         class RecordingClient:
             def __init__(self):
                 self.calls = []
+
+            def get_historical_cutoff(self):
+                return {"market_settled_ts": "2026-11-01T00:00:00Z"}
 
             def get_market_candlesticks(self, **kwargs):
                 self.calls.append(kwargs)
@@ -116,6 +156,9 @@ class CollectorTests(unittest.TestCase):
 
     def test_candlestick_collection_skips_missing_series_and_records_failure(self):
         class BrokenClient:
+            def get_historical_cutoff(self):
+                return {"market_settled_ts": "2026-11-01T00:00:00Z"}
+
             def get_market_candlesticks(self, **kwargs):
                 raise RuntimeError("temporary API issue")
 

@@ -113,13 +113,14 @@ def collect_candlesticks(
     end_ts: int,
     period_interval: int = 60,
     chunk_seconds: int = 7 * 24 * 60 * 60,
-    archived: bool = False,
+    archived: bool | None = None,
 ) -> CandlestickCollectionReport:
-    """Collect bounded historical candle windows for an explicit market set.
+    """Collect bounded candles, routing each market by Kalshi's current cutoff.
 
-    This deliberately does not enumerate the entire exchange or infer a time
-    range. Callers choose the market set and date window. Each request is
-    chunked to limit response size; failures are counted and retained as samples.
+    Pass archived=True/False to force one tier. The default (None) reads the
+    live market-settlement cutoff once and routes settled markets by settlement
+    timestamp; unsettled markets remain on the live endpoint. Settled records
+    without a usable settlement timestamp are skipped rather than guessed.
     """
     from .candlesticks import candlestick_snapshot
 
@@ -138,6 +139,13 @@ def collect_candlesticks(
 
     timestamp = datetime.now(timezone.utc)
     report = CandlestickCollectionReport(captured_at=timestamp.isoformat())
+    cutoff_ts = None
+    if archived is None:
+        cutoff = client.get_historical_cutoff()
+        cutoff_value = cutoff.get("market_settled_ts") if isinstance(cutoff, dict) else None
+        cutoff_ts = _unix_timestamp(cutoff_value)
+        if cutoff_ts is None:
+            raise ValueError("historical cutoff missing valid market_settled_ts")
 
     def records():
         for market in markets:
@@ -146,7 +154,15 @@ def collect_candlesticks(
             if not isinstance(ticker, str) or not ticker:
                 report.markets_skipped += 1
                 continue
-            if not archived and (not isinstance(series_ticker, str) or not series_ticker):
+            market_archived = archived
+            if market_archived is None:
+                settlement_ts = _unix_timestamp(market.get("settlement_ts"))
+                is_settled = market.get("result") in ("yes", "no") or market.get("status") == "settled"
+                if is_settled and settlement_ts is None:
+                    report.markets_skipped += 1
+                    continue
+                market_archived = settlement_ts is not None and settlement_ts < cutoff_ts
+            if not market_archived and (not isinstance(series_ticker, str) or not series_ticker):
                 report.markets_skipped += 1
                 continue
             report.markets_requested += 1
@@ -156,7 +172,7 @@ def collect_candlesticks(
                 chunk_start = start_ts
                 while chunk_start < end_ts:
                     chunk_end = min(chunk_start + effective_chunk_seconds, end_ts)
-                    if archived:
+                    if market_archived:
                         payload = client.get_historical_market_candlesticks(
                             market_ticker=ticker,
                             start_ts=chunk_start,

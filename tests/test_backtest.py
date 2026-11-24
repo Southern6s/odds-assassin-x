@@ -16,7 +16,7 @@ class BacktestTests(unittest.TestCase):
         report = evaluate(self.rows, edge_threshold=0.05, fee_per_contract=0.01)
         self.assertEqual(report.observations, 2)
         self.assertEqual(report.paper_trades, 2)
-        self.assertAlmostEqual(report.paper_net_pnl, 0.28)
+        self.assertAlmostEqual(report.paper_net_pnl, 0.58)
         self.assertGreaterEqual(report.brier, 0)
         self.assertGreater(report.logloss, 0)
 

@@ -156,11 +156,28 @@ class KalshiPublicClient:
     def iter_all_market_tiers(
         self, *, limit: int = 1000, max_pages_per_tier: int | None = None
     ) -> Iterator[dict[str, Any]]:
-        """Yield live-tier then archived-tier markets; consumers should dedupe by ticker."""
-        yield from self.iter_markets(limit=limit, max_pages=max_pages_per_tier)
-        yield from self.iter_historical_markets(
-            limit=limit, max_pages=max_pages_per_tier
-        )
+        """Yield unique markets from live and archived tiers, deduplicated by ticker."""
+        seen: set[str] = set()
+        for market in (
+            *self.iter_markets(limit=limit, max_pages=max_pages_per_tier),
+            *self.iter_historical_markets(limit=limit, max_pages=max_pages_per_tier),
+        ):
+            ticker = market.get("ticker")
+            if isinstance(ticker, str) and ticker:
+                if ticker in seen:
+                    continue
+                seen.add(ticker)
+            yield market
+
+    def iter_categorized_markets(
+        self, *, limit: int = 1000, max_pages_per_tier: int | None = None
+    ) -> Iterator[dict[str, Any]]:
+        """Yield unique markets enriched only with authoritative series categories."""
+        categories = series_category_map(self.get_series())
+        for market in self.iter_all_market_tiers(
+            limit=limit, max_pages_per_tier=max_pages_per_tier
+        ):
+            yield enrich_market_category(market, categories)
 
     def get_series(self, *, category: str | None = None) -> list[dict[str, Any]]:
         """Fetch series metadata used as the authoritative category taxonomy."""

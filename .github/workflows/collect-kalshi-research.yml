@@ -27,7 +27,7 @@ concurrency:
 jobs:
   collect:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 360
     steps:
       - name: Validate requested time window
         shell: bash
@@ -62,10 +62,14 @@ jobs:
           python -m engine.trade_market_hydrator
           --trades data/trade_snapshots.jsonl
           --output data/market_snapshots.jsonl
-      - name: Collect bounded historical trades per market
+      - name: Discover complete live and historical market catalog
+        run: >-
+          python -m engine.collector
+          --output data/market_universe_snapshots.jsonl
+      - name: Collect bounded historical trades per discovered market
         run: >-
           python -m engine.market_trade_collector
-          --markets data/market_snapshots.jsonl
+          --markets data/market_universe_snapshots.jsonl
           --min-ts "${{ inputs.min_ts }}"
           --max-ts "${{ inputs.max_ts }}"
           --max-pages-per-tier "${{ inputs.max_trade_pages_per_tier }}"

@@ -85,6 +85,23 @@ class KalshiClientTests(unittest.TestCase):
                 start_ts=10, end_ts=10, period_interval=60,
             )
 
+
+    def test_historical_candlestick_endpoint_and_validation(self):
+        client, opener = self.client_with_pages([
+            {"ticker": "M1", "candlesticks": []},
+        ])
+        result = client.get_historical_market_candlesticks(
+            market_ticker="M1", start_ts=100, end_ts=200, period_interval=60
+        )
+        self.assertEqual(result["ticker"], "M1")
+        url = opener.call_args.args[0].full_url
+        self.assertIn("/historical/markets/M1/candlesticks", url)
+        self.assertIn("period_interval=60", url)
+        with self.assertRaises(ValueError):
+            client.get_historical_market_candlesticks(
+                market_ticker="M1", start_ts=200, end_ts=100
+            )
+
     def test_series_categories_enrich_without_title_guessing(self):
         mapping = series_category_map([
             {"ticker": "SERIES-A", "category": "Sports"},

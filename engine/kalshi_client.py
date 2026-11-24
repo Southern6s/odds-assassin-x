@@ -1,14 +1,16 @@
 """Read-only client for Kalshi's public market-data endpoints.
 
-This module deliberately contains no authentication, account, order, or trading
-methods. Pagination is cursor-based and guarded against repeated cursors.
+Uses only the Python standard library. No authentication, account, order, or
+trading methods are included. Pagination is cursor-based and guarded.
 """
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
+import json
 from typing import Any
-
-import requests
+from urllib.error import HTTPError, URLError
+from urllib.parse import quote, urlencode
+from urllib.request import Request, urlopen
 
 
 DEFAULT_BASE_URL = "https://external-api.kalshi.com/trade-api/v2"
@@ -22,28 +24,30 @@ class KalshiPublicClient:
     def __init__(
         self,
         base_url: str = DEFAULT_BASE_URL,
-        session: requests.Session | None = None,
+        opener: Callable[..., Any] = urlopen,
         timeout: float = 15.0,
     ) -> None:
         if timeout <= 0:
             raise ValueError("timeout must be positive")
         self.base_url = base_url.rstrip("/")
-        self.session = session or requests.Session()
+        self.opener = opener
         self.timeout = timeout
 
     def _get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
-        response = self.session.get(
-            f"{self.base_url}/{path.lstrip('/')}",
-            params=params or {},
+        url = f"{self.base_url}/{quote(path.lstrip('/'), safe='/')}"
+        if params:
+            url = f"{url}?{urlencode(params)}"
+        request = Request(
+            url,
             headers={"Accept": "application/json", "User-Agent": "OddsAssassinX/0.2"},
-            timeout=self.timeout,
+            method="GET",
         )
         try:
-            response.raise_for_status()
-            payload = response.json()
-        except requests.RequestException as exc:
+            with self.opener(request, timeout=self.timeout) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except (HTTPError, URLError, TimeoutError, OSError) as exc:
             raise KalshiAPIError(f"Kalshi request failed: {exc}") from exc
-        except ValueError as exc:
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise KalshiAPIError("Kalshi returned invalid JSON") from exc
         if not isinstance(payload, dict):
             raise KalshiAPIError("Kalshi response must be a JSON object")

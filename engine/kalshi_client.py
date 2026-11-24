@@ -216,6 +216,27 @@ class KalshiPublicClient:
             "period_interval": period_interval,
         })
 
+    def get_historical_market_candlesticks(
+        self,
+        *,
+        market_ticker: str,
+        start_ts: int,
+        end_ts: int,
+        period_interval: int = 60,
+    ) -> dict[str, Any]:
+        """Fetch candlesticks for a market in Kalshi's historical archive."""
+        if not market_ticker:
+            raise ValueError("market_ticker is required")
+        if start_ts < 0 or end_ts <= start_ts:
+            raise ValueError("invalid candle time range")
+        if period_interval not in (1, 60, 1440):
+            raise ValueError("period_interval must be 1, 60, or 1440")
+        return self._get(f"historical/markets/{market_ticker}/candlesticks", {
+            "start_ts": start_ts,
+            "end_ts": end_ts,
+            "period_interval": period_interval,
+        })
+
 
 def series_category_map(series_records: list[dict[str, Any]]) -> dict[str, str]:
     """Map series ticker to its category without guessing from market titles."""

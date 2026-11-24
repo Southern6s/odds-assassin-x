@@ -203,6 +203,37 @@ class KalshiPublicClient:
                 seen.add(ticker)
             yield market
 
+    def iter_markets_by_tickers(
+        self, tickers: list[str], *, batch_size: int = 100
+    ) -> Iterator[dict[str, Any]]:
+        """Fetch matching markets from both live and historical tiers.
+
+        Ticker batches keep query strings bounded and make trade-to-market
+        hydration deterministic instead of relying on unrelated global pages.
+        """
+        if not 1 <= batch_size <= 100:
+            raise ValueError("batch_size must be between 1 and 100")
+        unique = list(dict.fromkeys(
+            ticker.strip() for ticker in tickers
+            if isinstance(ticker, str) and ticker.strip()
+        ))
+        seen: set[str] = set()
+        for offset in range(0, len(unique), batch_size):
+            batch = unique[offset:offset + batch_size]
+            params = {"tickers": ",".join(batch), "limit": batch_size}
+            for endpoint in ("markets", "historical/markets"):
+                payload = self._get(endpoint, params)
+                markets = payload.get("markets")
+                if not isinstance(markets, list):
+                    raise KalshiAPIError(f"Kalshi {endpoint} response is missing a markets list")
+                for market in markets:
+                    if not isinstance(market, dict):
+                        raise KalshiAPIError("Kalshi returned a malformed market record")
+                    ticker = market.get("ticker")
+                    if isinstance(ticker, str) and ticker not in seen:
+                        seen.add(ticker)
+                        yield market
+
     def iter_categorized_markets(
         self, *, limit: int = 1000, max_pages_per_tier: int | None = None
     ) -> Iterator[dict[str, Any]]:

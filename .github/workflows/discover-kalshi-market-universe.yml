@@ -29,8 +29,10 @@ jobs:
           set -euo pipefail
           [[ "$MAX_PAGES" =~ ^[0-9]{1,4}$ ]] || { echo "max_pages_per_tier must be a positive integer"; exit 1; }
           (( MAX_PAGES >= 1 && MAX_PAGES <= 1000 )) || { echo "max_pages_per_tier must be between 1 and 1000"; exit 1; }
-      - name: Check out repository
+      - name: Check out discovery code
         uses: actions/checkout@v4
+        with:
+          ref: feature/market-intelligence-foundation
       - name: Set up Python
         uses: actions/setup-python@v5
         with:

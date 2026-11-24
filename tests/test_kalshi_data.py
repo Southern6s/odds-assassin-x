@@ -24,6 +24,20 @@ class KalshiDataTests(unittest.TestCase):
         self.assertAlmostEqual(result["no_bid"], 0.51)
         self.assertAlmostEqual(result["no_ask"], 0.53)
 
+    def test_retains_settlement_metadata_for_binary_labels(self):
+        result = normalize_market({
+            "ticker": "SETTLED-YES", "event_ticker": "EVENT-1",
+            "market_type": "binary", "status": "finalized", "result": "yes",
+            "settlement_ts": "2026-01-01T12:00:00Z",
+            "expected_expiration_time": "2026-01-01T11:55:00Z",
+        })
+        self.assertEqual(result["event_ticker"], "EVENT-1")
+        self.assertEqual(result["market_type"], "binary")
+        self.assertEqual(result["status"], "finalized")
+        self.assertEqual(result["result"], "yes")
+        self.assertEqual(result["settlement_ts"], "2026-01-01T12:00:00Z")
+        self.assertEqual(result["expected_expiration_time"], "2026-01-01T11:55:00Z")
+
     def test_missing_quotes_stay_missing(self):
         result = normalize_market({"ticker": "NO-QUOTE"})
         self.assertIsNone(result["yes_bid"])

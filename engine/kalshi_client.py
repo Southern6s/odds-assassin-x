@@ -7,7 +7,10 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 from itertools import chain
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 import json
+import time
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode
@@ -27,12 +30,22 @@ class KalshiPublicClient:
         base_url: str = DEFAULT_BASE_URL,
         opener: Callable[..., Any] = urlopen,
         timeout: float = 15.0,
+        retry_attempts: int = 5,
+        retry_backoff_seconds: float = 1.0,
+        sleeper: Callable[[float], None] = time.sleep,
     ) -> None:
         if timeout <= 0:
             raise ValueError("timeout must be positive")
+        if isinstance(retry_attempts, bool) or retry_attempts < 0:
+            raise ValueError("retry_attempts must be nonnegative")
+        if retry_backoff_seconds < 0:
+            raise ValueError("retry_backoff_seconds must be nonnegative")
         self.base_url = base_url.rstrip("/")
         self.opener = opener
         self.timeout = timeout
+        self.retry_attempts = retry_attempts
+        self.retry_backoff_seconds = retry_backoff_seconds
+        self.sleeper = sleeper
 
     def _get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         url = f"{self.base_url}/{quote(path.lstrip('/'), safe='/')}"
@@ -43,13 +56,33 @@ class KalshiPublicClient:
             headers={"Accept": "application/json", "User-Agent": "OddsAssassinX/0.2"},
             method="GET",
         )
-        try:
-            with self.opener(request, timeout=self.timeout) as response:
-                payload = json.loads(response.read().decode("utf-8"))
-        except (HTTPError, URLError, TimeoutError, OSError) as exc:
-            raise KalshiAPIError(f"Kalshi request failed: {exc}") from exc
-        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise KalshiAPIError("Kalshi returned invalid JSON") from exc
+        for attempt in range(self.retry_attempts + 1):
+            try:
+                with self.opener(request, timeout=self.timeout) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+                break
+            except HTTPError as exc:
+                retryable = exc.code == 429 or 500 <= exc.code < 600
+                if not retryable or attempt >= self.retry_attempts:
+                    raise KalshiAPIError(f"Kalshi request failed: {exc}") from exc
+                retry_after = exc.headers.get("Retry-After") if exc.headers else None
+                delay = None
+                if retry_after:
+                    try:
+                        delay = max(0.0, float(retry_after))
+                    except (TypeError, ValueError):
+                        try:
+                            retry_at = parsedate_to_datetime(retry_after)
+                            delay = max(0.0, (retry_at - datetime.now(timezone.utc)).total_seconds())
+                        except (TypeError, ValueError, OverflowError):
+                            delay = None
+                if delay is None:
+                    delay = min(self.retry_backoff_seconds * (2 ** attempt), 30.0)
+                self.sleeper(delay)
+            except (URLError, TimeoutError, OSError) as exc:
+                raise KalshiAPIError(f"Kalshi request failed: {exc}") from exc
+            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise KalshiAPIError("Kalshi returned invalid JSON") from exc
         if not isinstance(payload, dict):
             raise KalshiAPIError("Kalshi response must be a JSON object")
         return payload

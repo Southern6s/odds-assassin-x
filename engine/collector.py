@@ -94,6 +94,95 @@ def collect_from_kalshi(
     return report
 
 
+@dataclass
+class CandlestickCollectionReport:
+    captured_at: str
+    markets_requested: int = 0
+    candles_written: int = 0
+    markets_skipped: int = 0
+    markets_failed: int = 0
+    errors: list[str] = field(default_factory=list)
+
+
+def collect_candlesticks(
+    client: KalshiPublicClient,
+    markets: Iterable[dict[str, Any]],
+    output_path: str | Path,
+    *,
+    start_ts: int,
+    end_ts: int,
+    period_interval: int = 60,
+    chunk_seconds: int = 7 * 24 * 60 * 60,
+    archived: bool = False,
+) -> CandlestickCollectionReport:
+    """Collect bounded historical candle windows for an explicit market set.
+
+    This deliberately does not enumerate the entire exchange or infer a time
+    range. Callers choose the market set and date window. Each request is
+    chunked to limit response size; failures are counted and retained as samples.
+    """
+    from .candlesticks import candlestick_snapshot
+
+    if start_ts < 0 or end_ts <= start_ts:
+        raise ValueError("invalid candlestick collection time range")
+    if period_interval not in (1, 60, 1440):
+        raise ValueError("period_interval must be 1, 60, or 1440")
+    if chunk_seconds <= 0:
+        raise ValueError("chunk_seconds must be positive")
+
+    timestamp = datetime.now(timezone.utc)
+    report = CandlestickCollectionReport(captured_at=timestamp.isoformat())
+
+    def records():
+        for market in markets:
+            ticker = market.get("ticker") if isinstance(market, dict) else None
+            series_ticker = market.get("series_ticker") if isinstance(market, dict) else None
+            if not isinstance(ticker, str) or not ticker:
+                report.markets_skipped += 1
+                continue
+            if not archived and (not isinstance(series_ticker, str) or not series_ticker):
+                report.markets_skipped += 1
+                continue
+            report.markets_requested += 1
+            try:
+                chunk_start = start_ts
+                while chunk_start < end_ts:
+                    chunk_end = min(chunk_start + chunk_seconds, end_ts)
+                    if archived:
+                        payload = client.get_historical_market_candlesticks(
+                            market_ticker=ticker,
+                            start_ts=chunk_start,
+                            end_ts=chunk_end,
+                            period_interval=period_interval,
+                        )
+                    else:
+                        payload = client.get_market_candlesticks(
+                            series_ticker=series_ticker,
+                            market_ticker=ticker,
+                            start_ts=chunk_start,
+                            end_ts=chunk_end,
+                            period_interval=period_interval,
+                        )
+                    candles = payload.get("candlesticks")
+                    if not isinstance(candles, list):
+                        raise ValueError("response missing candlesticks list")
+                    for candle in candles:
+                        yield candlestick_snapshot(
+                            candle,
+                            market_ticker=ticker,
+                            period_interval=period_interval,
+                            captured_at=timestamp,
+                        )
+                    chunk_start = chunk_end
+            except (TypeError, ValueError, RuntimeError) as exc:
+                report.markets_failed += 1
+                if len(report.errors) < 20:
+                    report.errors.append(f"{ticker}: {exc}")
+
+    report.candles_written = append_jsonl(records(), output_path)
+    return report
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Collect public Kalshi market snapshots (read-only)")
     parser.add_argument("--output", default="data/market_snapshots.jsonl")

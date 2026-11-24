@@ -50,6 +50,18 @@ class KalshiClientTests(unittest.TestCase):
         self.assertTrue(opener.call_args_list[0].args[0].full_url.endswith("/markets?limit=1000"))
         self.assertTrue(opener.call_args_list[1].args[0].full_url.endswith("/historical/markets?limit=1000"))
 
+
+    def test_iter_markets_by_tickers_batches_and_checks_both_tiers(self):
+        client, opener = self.client_with_pages([
+            {"markets": [{"ticker": "A"}, {"ticker": "B"}], "cursor": ""},
+            {"markets": [{"ticker": "B"}, {"ticker": "C"}], "cursor": ""},
+        ])
+        markets = list(client.iter_markets_by_tickers(["A", "B", "A", "C"], batch_size=2))
+        self.assertEqual([m["ticker"] for m in markets], ["A", "B", "C"])
+        self.assertEqual(opener.call_count, 2)
+        self.assertIn("tickers=A%2CB", opener.call_args_list[0].args[0].full_url)
+        self.assertIn("/historical/markets?", opener.call_args_list[1].args[0].full_url)
+
     def test_categorized_markets_use_series_metadata(self):
         opener = Mock(side_effect=[
             FakeResponse({"series": [{"ticker": "SERIES-A", "category": "Sports"}]}),

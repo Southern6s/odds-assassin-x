@@ -148,7 +148,10 @@ def collect_candlesticks(
                 continue
             report.markets_requested += 1
             try:
+                market_records: list[dict[str, Any]] = []
+                seen_periods: set[int] = set()
                 chunk_start = start_ts
+                period_seconds = period_interval * 60
                 while chunk_start < end_ts:
                     chunk_end = min(chunk_start + effective_chunk_seconds, end_ts)
                     if archived:
@@ -170,13 +173,20 @@ def collect_candlesticks(
                     if not isinstance(candles, list):
                         raise ValueError("response missing candlesticks list")
                     for candle in candles:
-                        yield candlestick_snapshot(
+                        record = candlestick_snapshot(
                             candle,
                             market_ticker=ticker,
                             period_interval=period_interval,
                             captured_at=timestamp,
                         )
-                    chunk_start = chunk_end
+                        end_period_ts = record["candle"]["end_period_ts"]
+                        if end_period_ts not in seen_periods:
+                            seen_periods.add(end_period_ts)
+                            market_records.append(record)
+                    # The API's window endpoints are inclusive; advance one full
+                    # period to avoid fetching the boundary candle twice.
+                    chunk_start = chunk_end + period_seconds
+                yield from market_records
             except (TypeError, ValueError, RuntimeError) as exc:
                 report.markets_failed += 1
                 if len(report.errors) < 20:

@@ -6,6 +6,7 @@ trading methods are included. Pagination is cursor-based and guarded.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
+from itertools import chain
 import json
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -158,9 +159,9 @@ class KalshiPublicClient:
     ) -> Iterator[dict[str, Any]]:
         """Yield unique markets from live and archived tiers, deduplicated by ticker."""
         seen: set[str] = set()
-        for market in (
-            *self.iter_markets(limit=limit, max_pages=max_pages_per_tier),
-            *self.iter_historical_markets(limit=limit, max_pages=max_pages_per_tier),
+        for market in chain(
+            self.iter_markets(limit=limit, max_pages=max_pages_per_tier),
+            self.iter_historical_markets(limit=limit, max_pages=max_pages_per_tier),
         ):
             ticker = market.get("ticker")
             if isinstance(ticker, str) and ticker:

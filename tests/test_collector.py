@@ -80,15 +80,15 @@ class CollectorTests(unittest.TestCase):
             path = Path(folder) / "candles.jsonl"
             report = collect_candlesticks(
                 client, [{"ticker": "MKT", "series_ticker": "SERIES"}], path,
-                start_ts=100, end_ts=350, period_interval=60, chunk_seconds=100,
+                start_ts=100, end_ts=15000, period_interval=60, chunk_seconds=7200,
             )
             rows = [json.loads(line) for line in path.read_text().splitlines()]
         self.assertEqual(report.markets_requested, 1)
         self.assertEqual(report.candles_written, 2)
         self.assertEqual(len(client.calls), 2)
         self.assertEqual(client.calls[0]["start_ts"], 100)
-        self.assertEqual(client.calls[0]["end_ts"], 200)
-        self.assertEqual(client.calls[1]["start_ts"], 260)
+        self.assertEqual(client.calls[0]["end_ts"], 7300)
+        self.assertEqual(client.calls[1]["start_ts"], 10900)
         self.assertEqual(rows[0]["candle"]["price"]["close"], 0.45)
 
 

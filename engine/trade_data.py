@@ -33,6 +33,9 @@ def normalize_trade(raw: dict[str, Any]) -> dict[str, Any]:
     book_side = raw["taker_book_side"]
     if outcome_side not in ("yes", "no") or book_side not in ("bid", "ask"):
         raise ValueError("invalid taker direction fields")
+    # Kalshi documents bid as YES exposure and ask as NO exposure.
+    if (outcome_side == "yes") != (book_side == "bid"):
+        raise ValueError("taker_outcome_side and taker_book_side are inconsistent")
     if not isinstance(raw["is_block_trade"], bool):
         raise ValueError("is_block_trade must be boolean")
     try:

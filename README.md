@@ -91,3 +91,25 @@ not a validated trading model. Use chronological out-of-sample evaluation and
 compare against the market midpoint baseline before interpreting any signal.
 The model intentionally does not select features automatically or use market
 midpoint as an input feature.
+
+### Collect public trade history (read-only)
+
+Kalshi trade collection is bounded to an explicit Unix-second interval. The
+collector pages through both live and historical public trade tiers, normalizes
+the documented fixed-point fields, deduplicates trade IDs, and writes append-
+only JSONL snapshots:
+
+```bash
+python -m engine.trade_collector \
+  --min-ts 1767225600 \
+  --max-ts 1767312000 \
+  --output data/trade_snapshots.jsonl
+```
+
+The interval is required to prevent an accidental unbounded backfill. Use
+`--ticker` to restrict collection to one market, `--block-trades yes` or
+`--block-trades no` to filter block trades, and `--max-pages-per-tier` for a
+small test run. Kalshi's documented live endpoint is `GET /markets/trades`;
+archived trades use `GET /historical/trades`. The collector is unauthenticated,
+read-only, and does not place orders. Local JSONL is research storage, not
+durable hosted storage.

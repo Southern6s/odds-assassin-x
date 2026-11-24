@@ -52,3 +52,17 @@ chronological walk-forward testing before considering paper signals.
 
 SQLite is currently a local-development adapter. Do not rely on a local
 SQLite file or Render's ephemeral filesystem for durable production history.
+
+### Score the market-implied baseline
+
+After creating the research dataset, score the last valid pre-cutoff YES midpoint:
+
+```bash
+python -m engine.market_baseline --dataset data/research_dataset.jsonl
+```
+
+The report includes Brier score, log loss, accuracy, calibration bins, quote
+coverage, average YES spread, and Brier skill versus a neutral 50% forecast.
+Rows without a two-sided YES midpoint are excluded from scoring and remain in
+the coverage denominator. This is a descriptive benchmark, not evidence of a
+tradable edge: it does not model fills, fees, slippage, or liquidity.

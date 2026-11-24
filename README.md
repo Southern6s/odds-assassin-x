@@ -135,3 +135,27 @@ timestamp cannot be split between training and testing. The report aggregates
 Brier score and log loss across folds. This evaluator does not simulate fills,
 fees, slippage, or orders. One-cutoff datasets cannot produce a walk-forward
 result; collect or construct multiple historical point-in-time snapshots first.
+
+### Build a multi-cutoff historical dataset
+
+For genuine walk-forward work, build observations at several historical decision
+times rather than reusing one cutoff. Supply collected market metadata, public
+trade prints, and (ideally) historical candlestick snapshots. Candle close
+quotes are timestamped at each candle's end time, not the later collection
+time, and are filtered against each forecast cutoff.
+
+```bash
+python -m engine.multi_cutoff_dataset \
+  --markets data/market_snapshots.jsonl \
+  --trades data/trade_snapshots.jsonl \
+  --candlesticks data/candlestick_snapshots.jsonl \
+  --forecast-times 2026-01-01T12:00:00Z,2026-01-02T12:00:00Z \
+  --max-quote-age-seconds 3600 \
+  --output data/multi_cutoff_research.jsonl
+```
+
+Then evaluate the repeated observations chronologically with
+`python -m engine.walk_forward`. This workflow is still research-only; the
+quality and representativeness of collected historical data must be checked
+before interpreting scores. Do not assume missing candle closes or missing
+historical snapshots can be reconstructed.

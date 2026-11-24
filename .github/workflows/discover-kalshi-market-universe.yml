@@ -1,0 +1,62 @@
+name: Discover Kalshi market universe
+
+on:
+  workflow_dispatch:
+    inputs:
+      max_pages_per_tier:
+        description: "Maximum catalog pages to read from each Kalshi tier (1000 markets/page)"
+        required: true
+        default: "10"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kalshi-market-universe-discovery
+  cancel-in-progress: false
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Validate discovery page budget
+        shell: bash
+        env:
+          MAX_PAGES: ${{ inputs.max_pages_per_tier }}
+        run: |
+          set -euo pipefail
+          [[ "$MAX_PAGES" =~ ^[0-9]{1,4}$ ]] || { echo "max_pages_per_tier must be a positive integer"; exit 1; }
+          (( MAX_PAGES >= 1 && MAX_PAGES <= 1000 )) || { echo "max_pages_per_tier must be between 1 and 1000"; exit 1; }
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Restore prior catalog checkpoint
+        uses: actions/cache@v4
+        with:
+          path: |
+            data/market_universe_snapshots.jsonl
+            data/market_universe_state.json
+          key: kalshi-universe-${{ github.ref_name }}-${{ github.run_id }}
+          restore-keys: |
+            kalshi-universe-${{ github.ref_name }}-
+      - name: Discover a resumable slice of live and historical catalog
+        run: >-
+          python -m engine.catalog_discovery
+          --max-pages-per-tier "${{ inputs.max_pages_per_tier }}"
+          --output data/market_universe_snapshots.jsonl
+          --state-file data/market_universe_state.json
+      - name: Upload catalog slice
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kalshi-market-universe-${{ github.run_id }}
+          path: data/
+          if-no-files-found: warn
+          retention-days: 14

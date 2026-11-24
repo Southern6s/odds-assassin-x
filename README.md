@@ -66,3 +66,28 @@ coverage, average YES spread, and Brier skill versus a neutral 50% forecast.
 Rows without a two-sided YES midpoint are excluded from scoring and remain in
 the coverage denominator. This is a descriptive benchmark, not evidence of a
 tradable edge: it does not model fills, fees, slippage, or liquidity.
+
+### Fit a leakage-filtered event-feature model (research only)
+
+The experimental logistic model uses an explicit allowlist of numeric
+`feature_*` columns and excludes every training label not settled by the fit
+cutoff. Example from Python:
+
+```python
+from datetime import datetime, timezone
+from engine.logistic_model import fit_logistic_model
+
+model = fit_logistic_model(
+    research_rows,
+    ["yes_bid_contracts", "no_bid_contracts", "contract_volume"],
+    as_of=datetime(2026, 1, 10, tzinfo=timezone.utc),
+    min_training_rows=100,
+)
+probability_yes = model.predict_probability(research_rows[0])
+```
+
+This is an experimental, dependency-free L2-regularized logistic regression,
+not a validated trading model. Use chronological out-of-sample evaluation and
+compare against the market midpoint baseline before interpreting any signal.
+The model intentionally does not select features automatically or use market
+midpoint as an input feature.

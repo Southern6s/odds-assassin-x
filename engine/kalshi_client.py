@@ -407,6 +407,30 @@ class KalshiPublicClient:
         })
 
 
+
+def enrich_market_series(
+    market: dict[str, Any], series_records: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """Attach authoritative series metadata by matching the event ticker prefix.
+
+    Kalshi event tickers begin with their series ticker followed by a hyphen.
+    Only exact prefixes present in the returned series catalog are accepted.
+    """
+    enriched = dict(market)
+    event_ticker = enriched.get("event_ticker")
+    if not enriched.get("series_ticker") and isinstance(event_ticker, str):
+        matches = [
+            item for item in series_records
+            if isinstance(item.get("ticker"), str)
+            and event_ticker.startswith(item["ticker"] + "-")
+        ]
+        if matches:
+            series = max(matches, key=lambda item: len(item["ticker"]))
+            enriched["series_ticker"] = series["ticker"]
+            if not enriched.get("category") and isinstance(series.get("category"), str):
+                enriched["category"] = series["category"]
+    return enriched
+
 def series_category_map(series_records: list[dict[str, Any]]) -> dict[str, str]:
     """Map series ticker to its category without guessing from market titles."""
     result: dict[str, str] = {}

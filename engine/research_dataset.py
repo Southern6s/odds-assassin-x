@@ -49,10 +49,34 @@ def build_dataset_from_records(
     bucket_seconds: int = 3600,
     max_feature_age_seconds: int = 86400,
     max_quote_age_seconds: int = 300,
+    candlestick_snapshots: Iterable[dict[str, Any]] = (),
 ) -> list[dict[str, Any]]:
-    """Create labeled rows using only information available by forecast_at."""
+    """Create labeled rows using only information available by forecast_at.
+
+    Historical candle closes can supply decision-time YES bid/ask quotes. Their
+    observation time is the candle end timestamp, never the later download time.
+    """
     markets_input = list(market_snapshots)
     trades_input = list(trade_snapshots)
+    quote_snapshots = list(markets_input)
+    for snapshot in candlestick_snapshots:
+        candle = snapshot.get("candle", snapshot)
+        if not isinstance(candle, dict):
+            raise ValueError("candlestick snapshot must contain a candle object")
+        ticker = candle.get("market_ticker")
+        end_ts = candle.get("end_period_ts")
+        if not isinstance(ticker, str) or not ticker:
+            raise ValueError("candlestick snapshot requires market_ticker")
+        if isinstance(end_ts, bool) or not isinstance(end_ts, int) or end_ts <= 0:
+            raise ValueError("candlestick end_period_ts must be a positive Unix timestamp")
+        bid = candle.get("yes_bid")
+        ask = candle.get("yes_ask")
+        bid_close = bid.get("close") if isinstance(bid, dict) else None
+        ask_close = ask.get("close") if isinstance(ask, dict) else None
+        quote_snapshots.append({
+            "captured_at": datetime.fromtimestamp(end_ts, timezone.utc).isoformat(),
+            "market": {"ticker": ticker, "yes_bid": bid_close, "yes_ask": ask_close},
+        })
     market_to_event: dict[str, str] = {}
     latest_market: dict[str, tuple[datetime, dict[str, Any]]] = {}
 
@@ -90,7 +114,7 @@ def build_dataset_from_records(
         event_features,
         forecast_at=forecast_at,
         max_feature_age_seconds=max_feature_age_seconds,
-        market_snapshots=markets_input,
+        market_snapshots=quote_snapshots,
         max_quote_age_seconds=max_quote_age_seconds,
     )
 
@@ -123,6 +147,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--trades", required=True, help="Trade snapshot JSONL")
     parser.add_argument("--forecast-at", required=True,
                         help="Timezone-aware ISO-8601 decision timestamp")
+    parser.add_argument("--candlesticks", default=None,
+                        help="Optional historical candlestick snapshot JSONL for quote baselines")
     parser.add_argument("--output", default="data/research_dataset.jsonl")
     parser.add_argument("--bucket-seconds", type=int, default=3600)
     parser.add_argument("--max-feature-age-seconds", type=int, default=86400)
@@ -140,6 +166,7 @@ def main(argv: list[str] | None = None) -> int:
             bucket_seconds=args.bucket_seconds,
             max_feature_age_seconds=args.max_feature_age_seconds,
             max_quote_age_seconds=args.max_quote_age_seconds,
+            candlestick_snapshots=(read_jsonl(args.candlesticks) if args.candlesticks else ()),
         )
         written = write_jsonl_atomic(rows, args.output)
     except (OSError, ValueError) as exc:

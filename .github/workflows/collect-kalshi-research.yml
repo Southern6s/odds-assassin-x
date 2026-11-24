@@ -11,11 +11,6 @@ on:
         description: "End of trade window (Unix seconds, exclusive)"
         required: true
         type: string
-      max_pages_per_tier:
-        description: "Market-page cap per live/archive tier (blank = all pages)"
-        required: false
-        default: "5"
-        type: string
       max_trade_pages_per_tier:
         description: "Trade-page cap per live/archive tier (prevents oversized research artifacts)"
         required: true
@@ -39,7 +34,6 @@ jobs:
         env:
           MIN_TS: ${{ inputs.min_ts }}
           MAX_TS: ${{ inputs.max_ts }}
-          MAX_PAGES: ${{ inputs.max_pages_per_tier }}
           MAX_TRADE_PAGES: ${{ inputs.max_trade_pages_per_tier }}
         run: |
           set -euo pipefail
@@ -48,10 +42,6 @@ jobs:
           (( MAX_TS > MIN_TS )) || { echo "max_ts must be greater than min_ts"; exit 1; }
           [[ "$MAX_TRADE_PAGES" =~ ^[0-9]{1,4}$ ]] || { echo "max_trade_pages_per_tier must be a positive integer"; exit 1; }
           (( MAX_TRADE_PAGES >= 1 && MAX_TRADE_PAGES <= 1000 )) || { echo "max_trade_pages_per_tier must be between 1 and 1000"; exit 1; }
-          if [[ -n "$MAX_PAGES" ]]; then
-            [[ "$MAX_PAGES" =~ ^[0-9]{1,4}$ ]] || { echo "max_pages_per_tier must be a positive integer"; exit 1; }
-            (( MAX_PAGES >= 1 && MAX_PAGES <= 1000 )) || { echo "max_pages_per_tier must be between 1 and 1000"; exit 1; }
-          fi
       - name: Check out repository
         uses: actions/checkout@v4
       - name: Set up Python
@@ -60,18 +50,6 @@ jobs:
           python-version: "3.12"
       - name: Install dependencies
         run: pip install -r requirements.txt
-      - name: Collect market snapshots
-        shell: bash
-        env:
-          MAX_PAGES: ${{ inputs.max_pages_per_tier }}
-        run: |
-          set -euo pipefail
-          mkdir -p data
-          if [[ -n "$MAX_PAGES" ]]; then
-            python -m engine.collector --output data/market_snapshots.jsonl --max-pages-per-tier "$MAX_PAGES"
-          else
-            python -m engine.collector --output data/market_snapshots.jsonl
-          fi
       - name: Collect bounded public trades
         run: >-
           python -m engine.trade_collector
@@ -79,6 +57,11 @@ jobs:
           --max-ts "${{ inputs.max_ts }}"
           --max-pages-per-tier "${{ inputs.max_trade_pages_per_tier }}"
           --output data/trade_snapshots.jsonl
+      - name: Hydrate metadata for exactly the traded markets
+        run: >-
+          python -m engine.trade_market_hydrator
+          --trades data/trade_snapshots.jsonl
+          --output data/market_snapshots.jsonl
       - name: Upload research data artifact
         if: always()
         uses: actions/upload-artifact@v4

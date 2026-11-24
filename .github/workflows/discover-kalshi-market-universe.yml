@@ -37,11 +37,21 @@ jobs:
           python-version: "3.12"
       - name: Install dependencies
         run: pip install -r requirements.txt
-      - name: Discover a bounded slice of live and historical catalog
+      - name: Restore prior catalog checkpoint
+        uses: actions/cache@v4
+        with:
+          path: |
+            data/market_universe_snapshots.jsonl
+            data/market_universe_state.json
+          key: kalshi-universe-${{ github.ref_name }}-${{ github.run_id }}
+          restore-keys: |
+            kalshi-universe-${{ github.ref_name }}-
+      - name: Discover a resumable slice of live and historical catalog
         run: >-
-          python -m engine.collector
+          python -m engine.catalog_discovery
           --max-pages-per-tier "${{ inputs.max_pages_per_tier }}"
           --output data/market_universe_snapshots.jsonl
+          --state-file data/market_universe_state.json
       - name: Upload catalog slice
         if: always()
         uses: actions/upload-artifact@v4

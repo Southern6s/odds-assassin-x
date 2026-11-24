@@ -12,12 +12,16 @@ def _ohlc(value: Any, field: str) -> dict[str, float | None] | None:
         raise ValueError(f"{field} must be an object")
     result: dict[str, float | None] = {}
     for key in ("open", "high", "low", "close", "mean", "previous"):
-        raw = value.get(f"{key}_dollars", value.get(key))
+        dollars_key = f"{key}_dollars"
+        raw = value.get(dollars_key, value.get(key))
         if raw is None:
             result[key] = None
             continue
         try:
             number = float(raw)
+            # Current API uses *_dollars fields. Legacy unsuffixed values are cents.
+            if dollars_key not in value and number > 1:
+                number /= 100.0
         except (TypeError, ValueError) as exc:
             raise ValueError(f"invalid {field}.{key}") from exc
         if not 0 <= number <= 1:

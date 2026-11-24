@@ -180,6 +180,111 @@ class KalshiPublicClient:
         ):
             yield enrich_market_category(market, categories)
 
+
+    def _iter_trades_endpoint(
+        self,
+        endpoint: str,
+        *,
+        ticker: str | None = None,
+        min_ts: int | None = None,
+        max_ts: int | None = None,
+        is_block_trade: bool | None = None,
+        limit: int = 1000,
+        max_pages: int | None = None,
+    ) -> Iterator[dict[str, Any]]:
+        """Yield trade records from a live or historical tier."""
+        if not 1 <= limit <= 1000:
+            raise ValueError("limit must be between 1 and 1000")
+        if max_pages is not None and max_pages < 1:
+            raise ValueError("max_pages must be positive")
+        if min_ts is not None and min_ts < 0:
+            raise ValueError("min_ts must be nonnegative Unix seconds")
+        if max_ts is not None and max_ts < 0:
+            raise ValueError("max_ts must be nonnegative Unix seconds")
+        if min_ts is not None and max_ts is not None and max_ts <= min_ts:
+            raise ValueError("max_ts must be greater than min_ts")
+        cursor: str | None = None
+        seen_cursors: set[str] = set()
+        page_number = 0
+        while True:
+            params: dict[str, Any] = {"limit": limit}
+            if ticker:
+                params["ticker"] = ticker
+            if min_ts is not None:
+                params["min_ts"] = min_ts
+            if max_ts is not None:
+                params["max_ts"] = max_ts
+            if is_block_trade is not None:
+                params["is_block_trade"] = str(is_block_trade).lower()
+            if cursor:
+                params["cursor"] = cursor
+            payload = self._get(endpoint, params)
+            trades = payload.get("trades")
+            if not isinstance(trades, list):
+                raise KalshiAPIError(f"Kalshi {endpoint} response is missing a trades list")
+            for trade in trades:
+                if not isinstance(trade, dict):
+                    raise KalshiAPIError("Kalshi returned a malformed trade record")
+                yield trade
+            page_number += 1
+            next_cursor = payload.get("cursor") or None
+            if not next_cursor:
+                break
+            if not isinstance(next_cursor, str) or next_cursor in seen_cursors:
+                raise KalshiAPIError("Kalshi returned an invalid or repeated pagination cursor")
+            seen_cursors.add(next_cursor)
+            if max_pages is not None and page_number >= max_pages:
+                break
+            cursor = next_cursor
+
+    def iter_trades(
+        self, *, ticker: str | None = None, min_ts: int | None = None,
+        max_ts: int | None = None, is_block_trade: bool | None = None,
+        limit: int = 1000, max_pages: int | None = None,
+    ) -> Iterator[dict[str, Any]]:
+        """Yield recent trades from the live trade tier."""
+        yield from self._iter_trades_endpoint(
+            "markets/trades", ticker=ticker, min_ts=min_ts, max_ts=max_ts,
+            is_block_trade=is_block_trade, limit=limit, max_pages=max_pages,
+        )
+
+    def iter_historical_trades(
+        self, *, ticker: str | None = None, min_ts: int | None = None,
+        max_ts: int | None = None, is_block_trade: bool | None = None,
+        limit: int = 1000, max_pages: int | None = None,
+    ) -> Iterator[dict[str, Any]]:
+        """Yield archived trades from the historical tier."""
+        yield from self._iter_trades_endpoint(
+            "historical/trades", ticker=ticker, min_ts=min_ts, max_ts=max_ts,
+            is_block_trade=is_block_trade, limit=limit, max_pages=max_pages,
+        )
+
+    def iter_all_trade_tiers(
+        self, *, ticker: str | None = None, min_ts: int | None = None,
+        max_ts: int | None = None, is_block_trade: bool | None = None,
+        limit: int = 1000, max_pages_per_tier: int | None = None,
+    ) -> Iterator[dict[str, Any]]:
+        """Yield unique trades across live and archive tiers, keyed by trade_id."""
+        seen: set[str] = set()
+        for trade in chain(
+            self.iter_trades(
+                ticker=ticker, min_ts=min_ts, max_ts=max_ts,
+                is_block_trade=is_block_trade, limit=limit,
+                max_pages=max_pages_per_tier,
+            ),
+            self.iter_historical_trades(
+                ticker=ticker, min_ts=min_ts, max_ts=max_ts,
+                is_block_trade=is_block_trade, limit=limit,
+                max_pages=max_pages_per_tier,
+            ),
+        ):
+            trade_id = trade.get("trade_id")
+            if isinstance(trade_id, str) and trade_id:
+                if trade_id in seen:
+                    continue
+                seen.add(trade_id)
+            yield trade
+
     def get_series(self, *, category: str | None = None) -> list[dict[str, Any]]:
         """Fetch series metadata used as the authoritative category taxonomy."""
         params = {"category": category} if category else {}

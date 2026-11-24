@@ -19,8 +19,10 @@ def _ohlc(value: Any, field: str) -> dict[str, float | None] | None:
             continue
         try:
             number = float(raw)
-            # Current API uses *_dollars fields. Legacy unsuffixed values are cents.
-            if dollars_key not in value and number > 1:
+            # Current API uses decimal-dollar strings. Legacy integer fields are cents.
+            if dollars_key not in value and (
+                isinstance(raw, int) and not isinstance(raw, bool) or number > 1
+            ):
                 number /= 100.0
         except (TypeError, ValueError) as exc:
             raise ValueError(f"invalid {field}.{key}") from exc

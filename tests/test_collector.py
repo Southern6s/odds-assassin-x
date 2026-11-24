@@ -4,7 +4,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from engine.collector import collect_from_kalshi, collect_market_snapshot
+from engine.collector import collect_candlesticks, collect_from_kalshi, collect_market_snapshot
 
 
 class FakeClient:
@@ -58,6 +58,53 @@ class CollectorTests(unittest.TestCase):
         self.assertEqual(report.rejected, 1)
         self.assertEqual(report.historical_cutoff, {"cutoff_ts": 123})
         self.assertEqual(rows[0]["market"]["ticker"], "A")
+
+
+    def test_candlestick_collection_chunks_and_appends_normalized_rows(self):
+        class CandleClient:
+            def __init__(self):
+                self.calls = []
+
+            def get_market_candlesticks(self, **kwargs):
+                self.calls.append(kwargs)
+                return {"candlesticks": [{
+                    "end_period_ts": kwargs["end_ts"],
+                    "yes_bid": {"close_dollars": "0.40"},
+                    "yes_ask": {"close_dollars": "0.50"},
+                    "price": {"close_dollars": "0.45"},
+                    "volume_fp": "10",
+                }]}
+
+        client = CandleClient()
+        with TemporaryDirectory() as folder:
+            path = Path(folder) / "candles.jsonl"
+            report = collect_candlesticks(
+                client, [{"ticker": "MKT", "series_ticker": "SERIES"}], path,
+                start_ts=100, end_ts=250, period_interval=60, chunk_seconds=100,
+            )
+            rows = [json.loads(line) for line in path.read_text().splitlines()]
+        self.assertEqual(report.markets_requested, 1)
+        self.assertEqual(report.candles_written, 2)
+        self.assertEqual(len(client.calls), 2)
+        self.assertEqual(client.calls[0]["start_ts"], 100)
+        self.assertEqual(client.calls[0]["end_ts"], 200)
+        self.assertEqual(client.calls[1]["start_ts"], 200)
+        self.assertEqual(rows[0]["candle"]["price"]["close"], 0.45)
+
+    def test_candlestick_collection_skips_missing_series_and_records_failure(self):
+        class BrokenClient:
+            def get_market_candlesticks(self, **kwargs):
+                raise RuntimeError("temporary API issue")
+
+        with TemporaryDirectory() as folder:
+            path = Path(folder) / "candles.jsonl"
+            report = collect_candlesticks(
+                BrokenClient(), [{"ticker": "NO_SERIES"}, {"ticker": "BROKEN", "series_ticker": "S"}],
+                path, start_ts=1, end_ts=2,
+            )
+        self.assertEqual(report.markets_skipped, 1)
+        self.assertEqual(report.markets_failed, 1)
+        self.assertIn("temporary API issue", report.errors[0])
 
     def test_full_collector_appends_on_subsequent_runs(self):
         with TemporaryDirectory() as folder:

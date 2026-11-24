@@ -129,6 +129,9 @@ def collect_candlesticks(
         raise ValueError("period_interval must be 1, 60, or 1440")
     if chunk_seconds <= 0:
         raise ValueError("chunk_seconds must be positive")
+    # Kalshi rejects candle windows spanning more than 5,000 periods.
+    max_window_seconds = period_interval * 60 * 5000
+    effective_chunk_seconds = min(chunk_seconds, max_window_seconds)
 
     timestamp = datetime.now(timezone.utc)
     report = CandlestickCollectionReport(captured_at=timestamp.isoformat())
@@ -147,7 +150,7 @@ def collect_candlesticks(
             try:
                 chunk_start = start_ts
                 while chunk_start < end_ts:
-                    chunk_end = min(chunk_start + chunk_seconds, end_ts)
+                    chunk_end = min(chunk_start + effective_chunk_seconds, end_ts)
                     if archived:
                         payload = client.get_historical_market_candlesticks(
                             market_ticker=ticker,

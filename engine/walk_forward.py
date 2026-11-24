@@ -49,7 +49,6 @@ def evaluate_walk_forward(
     min_train_size: int = 100,
     test_cutoffs: int = 1,
     step_cutoffs: int | None = None,
-    min_category_samples: int = 0,
 ) -> dict[str, Any]:
     """Evaluate by distinct forecast cutoffs, fitting once per test window."""
     names = tuple(feature_names)
@@ -62,8 +61,6 @@ def evaluate_walk_forward(
     step = test_cutoffs if step_cutoffs is None else step_cutoffs
     if isinstance(step, bool) or step < 1:
         raise ValueError("step_cutoffs must be positive")
-    if isinstance(min_category_samples, bool) or min_category_samples < 0:
-        raise ValueError("min_category_samples must be nonnegative")
 
     items = list(rows)
     if not items:

@@ -66,10 +66,10 @@ jobs:
         run: >-
           python -m engine.collector
           --output data/market_universe_snapshots.jsonl
-      - name: Collect bounded historical trades per discovered market
+      - name: Collect bounded historical trades for hydrated sample markets
         run: >-
           python -m engine.market_trade_collector
-          --markets data/market_universe_snapshots.jsonl
+          --markets data/market_snapshots.jsonl
           --min-ts "${{ inputs.min_ts }}"
           --max-ts "${{ inputs.max_ts }}"
           --max-pages-per-tier "${{ inputs.max_trade_pages_per_tier }}"

@@ -159,3 +159,18 @@ Then evaluate the repeated observations chronologically with
 quality and representativeness of collected historical data must be checked
 before interpreting scores. Do not assume missing candle closes or missing
 historical snapshots can be reconstructed.
+
+
+### Run a bounded collection from GitHub Actions
+
+A manually triggered workflow is available under **Actions → Collect Kalshi
+research data → Run workflow**. Enter an explicit trade start and end as Unix
+seconds. The default market-page cap is 5 pages per tier for a quick first run;
+leave the cap blank only when you intentionally want to enumerate all market
+pages. The workflow collects public market snapshots and trades without
+credentials, then uploads the JSONL files as a 14-day workflow artifact. It
+does not commit collected data to the repository or submit orders.
+
+Start with a short interval and the default page cap. Review the collection
+summary and artifact before attempting a larger historical backfill. This
+workflow is manually triggered only; it does not run on a schedule.

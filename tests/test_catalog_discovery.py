@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
@@ -55,6 +56,22 @@ class ResumableCatalogTests(unittest.TestCase):
             self.assertEqual([call[1] for call in client.calls], [
                 None, "live-2", None
             ])
+
+    def test_market_rows_use_page_capture_time_not_session_start(self):
+        client = PagedClient()
+        with TemporaryDirectory() as folder:
+            output = Path(folder) / "catalog.jsonl"
+            state = Path(folder) / "state.json"
+            discover_resumable(
+                client, output, state, max_pages_per_tier=1
+            )
+            checkpoint = json.loads(state.read_text())
+            row = json.loads(output.read_text().splitlines()[0])
+            row_time = datetime.fromisoformat(row["captured_at"])
+            session_time = datetime.fromisoformat(checkpoint["captured_at"])
+            self.assertIsNotNone(row_time.tzinfo)
+            self.assertGreaterEqual(row_time, session_time)
+            self.assertNotEqual(row["captured_at"], checkpoint["captured_at"])
 
     def test_replay_of_uncheckpointed_page_is_idempotent(self):
         client = PagedClient()

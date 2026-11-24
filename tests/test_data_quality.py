@@ -4,11 +4,12 @@ from engine.data_quality import assess_candlesticks, assess_market_snapshots
 
 
 def candle(ts, ticker="MKT-1", interval=1):
-    ohlc = {"open": 0.4, "high": 0.5, "low": 0.3, "close": 0.45}
+    def make_ohlc():
+        return {"open": 0.4, "high": 0.5, "low": 0.3, "close": 0.45}
     return {"candle": {
         "market_ticker": ticker, "end_period_ts": ts,
-        "period_interval": interval, "yes_bid": ohlc,
-        "yes_ask": ohlc, "price": ohlc,
+        "period_interval": interval, "yes_bid": make_ohlc(),
+        "yes_ask": make_ohlc(), "price": make_ohlc(),
     }}
 
 

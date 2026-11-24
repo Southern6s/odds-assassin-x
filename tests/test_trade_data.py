@@ -24,13 +24,16 @@ class TradeDataTests(unittest.TestCase):
         self.assertEqual(trade["taker_outcome_side"], "yes")
         self.assertEqual(trade["created_time"], "2026-01-01T00:00:00+00:00")
 
-    def test_rejects_invalid_price_and_conflicting_direction(self):
+    def test_rejects_invalid_price_but_accepts_independent_side_fields(self):
         bad = raw_trade()
         bad["yes_price_dollars"] = "1.2"
         with self.assertRaises(ValueError):
             normalize_trade(bad)
+        valid = raw_trade()
+        valid["taker_book_side"] = "ask"
+        self.assertEqual(normalize_trade(valid)["taker_book_side"], "ask")
         bad = raw_trade()
-        bad["taker_book_side"] = "ask"
+        bad["taker_book_side"] = "sideways"
         with self.assertRaises(ValueError):
             normalize_trade(bad)
 

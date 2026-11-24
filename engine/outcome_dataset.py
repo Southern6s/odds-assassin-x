@@ -34,6 +34,8 @@ def build_resolved_market_dataset(
     *,
     forecast_at: datetime,
     max_feature_age_seconds: int = 86400,
+    market_snapshots: Iterable[Mapping[str, Any]] = (),
+    max_quote_age_seconds: int = 300,
 ) -> list[dict[str, Any]]:
     """Build one leakage-safe labeled observation per eligible binary market.
 
@@ -48,6 +50,24 @@ def build_resolved_market_dataset(
             or not isinstance(max_feature_age_seconds, int)
             or max_feature_age_seconds < 0):
         raise ValueError("max_feature_age_seconds must be a nonnegative integer")
+
+    if (isinstance(max_quote_age_seconds, bool)
+            or not isinstance(max_quote_age_seconds, int)
+            or max_quote_age_seconds < 0):
+        raise ValueError("max_quote_age_seconds must be a nonnegative integer")
+
+    latest_quotes: dict[str, tuple[datetime, Mapping[str, Any]]] = {}
+    for snapshot in market_snapshots:
+        market = _market_payload(snapshot)
+        ticker = market.get("ticker")
+        if not isinstance(ticker, str) or not ticker:
+            raise ValueError("each market snapshot requires ticker")
+        captured = _timestamp(snapshot.get("captured_at"), "captured_at")
+        if captured > cutoff or (cutoff - captured).total_seconds() > max_quote_age_seconds:
+            continue
+        previous = latest_quotes.get(ticker)
+        if previous is None or captured > previous[0]:
+            latest_quotes[ticker] = (captured, market)
 
     latest: dict[str, tuple[datetime, Mapping[str, Any]]] = {}
     for feature in event_features:
@@ -107,5 +127,32 @@ def build_resolved_market_dataset(
                 if isinstance(value, float) and not isfinite(value):
                     raise ValueError(f"feature {key} must be finite")
                 row[f"feature_{key}"] = value
+        quote_entry = latest_quotes.get(ticker)
+        if quote_entry is not None:
+            quote_at, quote = quote_entry
+            quote_values: dict[str, float | None] = {}
+            for side in ("yes_bid", "yes_ask", "no_bid", "no_ask"):
+                raw_value = quote.get(side)
+                if raw_value is None:
+                    quote_values[side] = None
+                    continue
+                try:
+                    number = float(raw_value)
+                except (TypeError, ValueError) as exc:
+                    raise ValueError(f"{side} quote must be numeric") from exc
+                if not isfinite(number) or not 0 <= number <= 1:
+                    raise ValueError(f"{side} quote must be between 0 and 1")
+                quote_values[side] = number
+            if (quote_values["yes_bid"] is not None and quote_values["yes_ask"] is not None
+                    and quote_values["yes_bid"] > quote_values["yes_ask"]):
+                raise ValueError(f"crossed YES quote for {ticker}")
+            if (quote_values["no_bid"] is not None and quote_values["no_ask"] is not None
+                    and quote_values["no_bid"] > quote_values["no_ask"]):
+                raise ValueError(f"crossed NO quote for {ticker}")
+            row["quote_captured_at"] = quote_at.isoformat()
+            row["quote_age_seconds"] = (cutoff - quote_at).total_seconds()
+            row.update({f"market_{key}": value for key, value in quote_values.items()})
+            bid, ask = quote_values["yes_bid"], quote_values["yes_ask"]
+            row["market_yes_mid"] = (bid + ask) / 2 if bid is not None and ask is not None else None
         rows.append(row)
     return sorted(rows, key=lambda row: row["market_ticker"])

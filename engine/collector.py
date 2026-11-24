@@ -94,6 +94,21 @@ def collect_from_kalshi(
     return report
 
 
+def _unix_timestamp(value: Any) -> float | None:
+    """Parse Kalshi ISO-8601 timestamps or Unix seconds without guessing."""
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return float(value)
+    if isinstance(value, str) and value.strip():
+        try:
+            parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                return None
+            return parsed.timestamp()
+        except (TypeError, ValueError, OverflowError):
+            return None
+    return None
+
+
 @dataclass
 class CandlestickCollectionReport:
     captured_at: str

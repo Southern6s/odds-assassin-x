@@ -34,11 +34,11 @@ class MarketTradeCollectorTests(unittest.TestCase):
         with TemporaryDirectory() as folder:
             markets = Path(folder) / "markets.jsonl"
             output = Path(folder) / "trades.jsonl"
-            markets.write_text("\\n".join([
+            markets.write_text("\n".join([
                 json.dumps({"market": {"ticker": "M1"}}),
                 json.dumps({"market": {"ticker": "M2"}}),
                 json.dumps({"market": {"ticker": "M1"}}),
-            ]) + "\\n")
+            ]) + "\n")
             client = FakeClient()
             report = collect_market_trade_snapshots(
                 client, markets, output, min_ts=1767225600,
@@ -57,8 +57,8 @@ class MarketTradeCollectorTests(unittest.TestCase):
         with TemporaryDirectory() as folder:
             markets = Path(folder) / "markets.jsonl"
             output = Path(folder) / "trades.jsonl"
-            markets.write_text(json.dumps({"market": {"ticker": "M1"}}) + "\\n")
-            output.write_text(json.dumps({"trade": {"trade_id": "T1"}}) + "\\n")
+            markets.write_text(json.dumps({"market": {"ticker": "M1"}}) + "\n")
+            output.write_text(json.dumps({"trade": {"trade_id": "T1"}}) + "\n")
             report = collect_market_trade_snapshots(
                 FakeClient(), markets, output, min_ts=1767225600,
                 max_ts=1767229200,

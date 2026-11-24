@@ -5,7 +5,7 @@ from pathlib import Path
 
 from engine.candlesticks import candlestick_snapshot
 from engine.kalshi_data import snapshot_record
-from engine.storage import SQLiteMarketStore
+from engine.storage import SQLiteMarketStore\nfrom engine.trade_data import trade_snapshot
 
 
 class SQLiteMarketStoreTests(unittest.TestCase):
@@ -43,6 +43,23 @@ class SQLiteMarketStoreTests(unittest.TestCase):
         rows = store.candles_for_market("MKT-1", 60)
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["candle"]["price"]["close"], 0.42)
+
+
+    def test_trade_snapshots_deduplicate_by_exchange_trade_id(self):
+        store = SQLiteMarketStore(":memory:")
+        when = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        raw = {
+            "trade_id": "TRADE-1", "ticker": "MKT-1", "count_fp": "1.00",
+            "yes_price_dollars": "0.42", "no_price_dollars": "0.58",
+            "taker_outcome_side": "yes", "taker_book_side": "bid",
+            "created_time": "2026-01-01T00:00:00Z", "is_block_trade": False,
+        }
+        record = trade_snapshot(raw, captured_at=when)
+        result = store.write_trade_snapshots([record, record])
+        self.assertEqual((result.inserted, result.duplicates), (1, 1))
+        self.assertEqual(store.trade_snapshot_count(), 1)
+        rows = store.trades_for_market("MKT-1")
+        self.assertEqual(rows[0]["trade"]["trade_id"], "TRADE-1")
 
     def test_invalid_query_limits_are_rejected(self):
         store = SQLiteMarketStore(":memory:")

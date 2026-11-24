@@ -42,11 +42,11 @@ class KalshiClientTests(unittest.TestCase):
 
     def test_all_market_tiers_include_archived_markets(self):
         client, opener = self.client_with_pages([
-            {"markets": [{"ticker": "LIVE"}], "cursor": ""},
-            {"markets": [{"ticker": "ARCHIVED"}], "cursor": ""},
+            {"markets": [{"ticker": "LIVE"}, {"ticker": "DUP"}], "cursor": ""},
+            {"markets": [{"ticker": "ARCHIVED"}, {"ticker": "DUP"}], "cursor": ""},
         ])
         markets = list(client.iter_all_market_tiers())
-        self.assertEqual([m["ticker"] for m in markets], ["LIVE", "ARCHIVED"])
+        self.assertEqual([m["ticker"] for m in markets], ["LIVE", "DUP", "ARCHIVED"])
         self.assertTrue(opener.call_args_list[0].args[0].full_url.endswith("/markets?limit=1000"))
         self.assertTrue(opener.call_args_list[1].args[0].full_url.endswith("/historical/markets?limit=1000"))
 

@@ -62,10 +62,6 @@ jobs:
           python -m engine.trade_market_hydrator
           --trades data/trade_snapshots.jsonl
           --output data/market_snapshots.jsonl
-      - name: Discover complete live and historical market catalog
-        run: >-
-          python -m engine.collector
-          --output data/market_universe_snapshots.jsonl
       - name: Collect bounded historical trades for hydrated sample markets
         run: >-
           python -m engine.market_trade_collector

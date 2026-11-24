@@ -32,6 +32,11 @@ class CandlestickTests(unittest.TestCase):
                                       captured_at=stamp)
         self.assertEqual(result["candle"]["yes_bid"]["close"], 0.4)
         self.assertEqual(result["captured_at"], stamp.isoformat())
+        one_cent = normalize_candlestick(
+            {"end_period_ts": 1790000000, "yes_bid": {"close": 1}},
+            market_ticker="MKT", period_interval=1,
+        )
+        self.assertEqual(one_cent["yes_bid"]["close"], 0.01)
 
     def test_rejects_invalid_timestamp_price_interval_and_crossed_candle(self):
         with self.assertRaises(ValueError):

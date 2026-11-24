@@ -11,12 +11,14 @@ class KalshiDataTests(unittest.TestCase):
     def test_normalizes_dollars_and_legacy_cents(self):
         market = {
             "ticker": "EXAMPLE-YES",
+            "series_ticker": "SERIES-1",
             "yes_bid_dollars": "0.42",
             "yes_ask": 48,
             "no_bid": 51,
             "no_ask_dollars": "0.53",
         }
         result = normalize_market(market)
+        self.assertEqual(result["series_ticker"], "SERIES-1")
         self.assertAlmostEqual(result["yes_bid"], 0.42)
         self.assertAlmostEqual(result["yes_ask"], 0.48)
         self.assertAlmostEqual(result["no_bid"], 0.51)

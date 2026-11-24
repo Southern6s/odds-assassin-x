@@ -5,7 +5,8 @@ from pathlib import Path
 
 from engine.candlesticks import candlestick_snapshot
 from engine.kalshi_data import snapshot_record
-from engine.storage import SQLiteMarketStore\nfrom engine.trade_data import trade_snapshot
+from engine.storage import SQLiteMarketStore
+from engine.trade_data import trade_snapshot
 
 
 class SQLiteMarketStoreTests(unittest.TestCase):

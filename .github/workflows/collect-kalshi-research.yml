@@ -14,7 +14,7 @@ on:
       max_pages_per_tier:
         description: "Market-page cap per live/archive tier (blank = all pages)"
         required: false
-        default: ""
+        default: "5"
         type: string
       max_trade_pages_per_tier:
         description: "Trade-page cap per live/archive tier (prevents oversized research artifacts)"

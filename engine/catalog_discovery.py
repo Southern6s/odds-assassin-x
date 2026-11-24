@@ -101,7 +101,9 @@ def discover_resumable(
         page, next_cursor = client.get_market_page(
             tier, cursor=state["cursor"], limit=limit
         )
-        timestamp = datetime.fromisoformat(state["captured_at"])
+        # Each page gets its own capture time. The checkpoint captured_at
+        # remains the discovery session start, not a timestamp for later pages.
+        timestamp = datetime.now(timezone.utc)
         records = []
         page_rejected = 0
         page_duplicates = 0

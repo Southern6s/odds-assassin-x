@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 
 from .collector import collect_market_snapshot
-from .kalshi_client import KalshiPublicClient
+from .kalshi_client import KalshiPublicClient, enrich_market_series
 
 
 @dataclass
@@ -44,7 +44,11 @@ def main(argv: list[str] | None = None) -> int:
                     tickers.append(ticker)
 
         client = KalshiPublicClient()
-        markets = list(client.iter_markets_by_tickers(tickers))
+        series_records = client.get_series()
+        markets = [
+            enrich_market_series(market, series_records)
+            for market in client.iter_markets_by_tickers(tickers)
+        ]
         found = {m.get("ticker") for m in markets if isinstance(m.get("ticker"), str)}
         report = collect_market_snapshot(markets, args.output)
         result = HydrationReport(

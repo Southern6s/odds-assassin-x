@@ -62,6 +62,14 @@ jobs:
           python -m engine.trade_market_hydrator
           --trades data/trade_snapshots.jsonl
           --output data/market_snapshots.jsonl
+      - name: Collect bounded historical trades per market
+        run: >-
+          python -m engine.market_trade_collector
+          --markets data/market_snapshots.jsonl
+          --min-ts "${{ inputs.min_ts }}"
+          --max-ts "${{ inputs.max_ts }}"
+          --max-pages-per-tier "${{ inputs.max_trade_pages_per_tier }}"
+          --output data/trade_snapshots.jsonl
       - name: Collect historical one-minute candles for hydrated markets
         run: >-
           python -m engine.candlestick_collector

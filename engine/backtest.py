@@ -27,6 +27,14 @@ class BacktestRow:
 
 
 @dataclass(frozen=True)
+class WalkForwardSplit:
+    """A chronological split whose training outcomes were known before testing."""
+
+    train: tuple[BacktestRow, ...]
+    test: tuple[BacktestRow, ...]
+
+
+@dataclass(frozen=True)
 class BacktestReport:
     observations: int
     brier: float
@@ -70,6 +78,43 @@ def _validate_rows(rows: Iterable[BacktestRow]) -> list[BacktestRow]:
         if row.no_ask is not None:
             _unit(row.no_ask, "no_ask")
     return sorted(items, key=lambda row: row.forecast_at)
+
+
+def walk_forward_splits(
+    rows: Iterable[BacktestRow],
+    *,
+    min_train_size: int,
+    test_size: int,
+    step_size: int | None = None,
+) -> tuple[WalkForwardSplit, ...]:
+    """Build chronological validation folds with resolved-label embargo.
+
+    A training row is eligible only if its outcome was resolved no later than
+    the first forecast timestamp in that fold's test window. This prevents
+    unresolved future labels from leaking into historical model training.
+    """
+    if min_train_size < 1 or test_size < 1:
+        raise ValueError("min_train_size and test_size must be positive")
+    step = test_size if step_size is None else step_size
+    if step < 1:
+        raise ValueError("step_size must be positive")
+    items = _validate_rows(rows)
+    splits: list[WalkForwardSplit] = []
+    test_start = min_train_size
+    while test_start < len(items):
+        test = items[test_start:test_start + test_size]
+        if not test:
+            break
+        test_cutoff = test[0].forecast_at
+        train = tuple(row for row in items[:test_start] if row.resolved_at <= test_cutoff)
+        if len(train) >= min_train_size:
+            splits.append(WalkForwardSplit(train=train, test=tuple(test)))
+        test_start += step
+    if not splits:
+        raise ValueError(
+            "not enough matured training observations for a leakage-free walk-forward split"
+        )
+    return tuple(splits)
 
 
 def calibration_bins(rows: Iterable[BacktestRow], bins: int = 10) -> tuple[dict, ...]:

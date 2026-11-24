@@ -61,7 +61,7 @@ class ResearchDatasetTests(unittest.TestCase):
     def test_invalid_jsonl_reports_line_number(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "bad.jsonl"
-            path.write_text('{"ok": true}\\nnot-json\\n', encoding="utf-8")
+            path.write_text('{"ok": true}\nnot-json\n', encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "bad.jsonl:2"):
                 read_jsonl(path)
 

@@ -91,6 +91,29 @@ class CollectorTests(unittest.TestCase):
         self.assertEqual(client.calls[1]["start_ts"], 200)
         self.assertEqual(rows[0]["candle"]["price"]["close"], 0.45)
 
+
+    def test_candlestick_collection_enforces_exchange_5000_period_cap(self):
+        class RecordingClient:
+            def __init__(self):
+                self.calls = []
+
+            def get_market_candlesticks(self, **kwargs):
+                self.calls.append(kwargs)
+                return {"candlesticks": []}
+
+        client = RecordingClient()
+        with TemporaryDirectory() as folder:
+            report = collect_candlesticks(
+                client, [{"ticker": "MKT", "series_ticker": "SERIES"}],
+                Path(folder) / "candles.jsonl",
+                start_ts=1, end_ts=400002, period_interval=1,
+                chunk_seconds=9999999,
+            )
+        self.assertEqual(report.markets_requested, 1)
+        self.assertEqual(len(client.calls), 2)
+        self.assertEqual(client.calls[0]["end_ts"] - client.calls[0]["start_ts"], 300000)
+        self.assertEqual(client.calls[1]["start_ts"], client.calls[0]["end_ts"])
+
     def test_candlestick_collection_skips_missing_series_and_records_failure(self):
         class BrokenClient:
             def get_market_candlesticks(self, **kwargs):

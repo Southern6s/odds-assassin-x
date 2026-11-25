@@ -165,12 +165,22 @@ historical snapshots can be reconstructed.
 
 A manually triggered workflow is available under **Actions → Collect Kalshi
 research data → Run workflow**. Enter an explicit trade start and end as Unix
-seconds. The default market-page cap is 5 pages per tier for a quick first run;
-leave the cap blank only when you intentionally want to enumerate all market
-pages. The workflow collects public market snapshots and trades without
-credentials, then uploads the JSONL files as a 14-day workflow artifact. It
-does not commit collected data to the repository or submit orders.
+seconds. The workflow's `max_trade_pages_per_tier` input defaults to 5 and
+accepts values from 1 to 1000; it is required and cannot be left blank. This
+cap applies separately to the live and historical trade tiers during the
+initial trade collection and the per-market historical trade collection.
+
+The workflow:
+- collects public trades inside the requested time interval;
+- hydrates market metadata for the markets represented in those trades;
+- collects bounded historical trades and one-minute candles for those markets;
+- uploads the resulting JSONL files as a 14-day workflow artifact.
+
+It does not enumerate the entire market catalog, commit collected data to the
+repository, or submit orders. For broad market discovery, use the separate
+**Discover Kalshi market universe** or **Discover open Kalshi markets**
+workflows, which have their own resumable page limits and checkpoints.
 
 Start with a short interval and the default page cap. Review the collection
-summary and artifact before attempting a larger historical backfill. This
-workflow is manually triggered only; it does not run on a schedule.
+artifact before attempting a larger historical backfill. These workflows are
+manually triggered only; they do not run on a schedule.

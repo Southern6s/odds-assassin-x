@@ -1,0 +1,122 @@
+name: Build Kalshi chronological research panel
+
+on:
+  workflow_run:
+    workflows: ["Collect Kalshi research data"]
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: kalshi-research-panel-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
+
+jobs:
+  build-panel:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: Check out current main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Download completed collection artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+          gh run download "$SOURCE_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --name "kalshi-research-$SOURCE_RUN_ID" --dir source-data
+          test -s source-data/ordinary_binary/market_snapshots.jsonl
+          test -s source-data/ordinary_binary/trade_snapshots.jsonl
+          test -s source-data/ordinary_binary/candlestick_snapshots.jsonl
+      - name: Build leakage-safe hourly panel and validate it
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          path = Path("source-data/ordinary_binary/candlestick_snapshots.jsonl")
+          stamps = []
+          with path.open() as stream:
+              for line in stream:
+                  item = json.loads(line)
+                  candle = item.get("candle", item)
+                  stamp = candle.get("end_period_ts")
+                  if isinstance(stamp, int) and not isinstance(stamp, bool) and stamp > 0:
+                      stamps.append(stamp)
+          if not stamps:
+              raise SystemExit("No valid candle timestamps in ordinary-binary artifact")
+
+          # Use complete UTC-hour cutoffs fully covered by the collected candle window.
+          first_hour = ((min(stamps) + 3599) // 3600) * 3600
+          last_hour = (max(stamps) // 3600) * 3600
+          if last_hour < first_hour:
+              raise SystemExit("Candle window does not span a complete hourly cutoff")
+          start = datetime.fromtimestamp(first_hour, timezone.utc).isoformat()
+          end = datetime.fromtimestamp(last_hour, timezone.utc).isoformat()
+          print(json.dumps({"forecast_start": start, "forecast_end": end,
+                            "hourly_cutoffs": (last_hour-first_hour)//3600+1}, indent=2))
+          with open("panel-window.env", "w") as output:
+              output.write(f"FORECAST_START={start}\nFORECAST_END={end}\n")
+          PY
+          set -a
+          source panel-window.env
+          set +a
+          python -m engine.research_panel \
+            --markets source-data/ordinary_binary/market_snapshots.jsonl \
+            --trades source-data/ordinary_binary/trade_snapshots.jsonl \
+            --candlesticks source-data/ordinary_binary/candlestick_snapshots.jsonl \
+            --forecast-start "$FORECAST_START" \
+            --forecast-end "$FORECAST_END" \
+            --step-seconds 3600 \
+            --max-cutoffs 1000 \
+            --output data/research_panel.jsonl
+          python - <<'PY'
+          import json
+          from collections import Counter
+          from pathlib import Path
+
+          panel = Path("data/research_panel.jsonl")
+          rows = [json.loads(line) for line in panel.open()] if panel.exists() else []
+          keys = [(r.get("forecast_at"), r.get("market_ticker")) for r in rows]
+          if len(keys) != len(set(keys)):
+              raise SystemExit("Duplicate market/cutoff rows detected")
+          for row in rows:
+              if not row.get("forecast_at") or not row.get("resolved_at"):
+                  raise SystemExit("Panel row missing forecast_at or resolved_at")
+              if row["resolved_at"] <= row["forecast_at"]:
+                  raise SystemExit("Outcome is not strictly after its forecast cutoff")
+          summary = {
+              "rows": len(rows),
+              "unique_markets": len({r["market_ticker"] for r in rows}),
+              "unique_events": len({r.get("event_ticker") for r in rows if r.get("event_ticker")}),
+              "cutoffs": len({r["forecast_at"] for r in rows}),
+              "labels": dict(Counter(str(r.get("label")) for r in rows)),
+              "duplicate_market_cutoff_rows": 0,
+              "strictly_future_settlements": True,
+              "paper_only": True,
+              "live_trading": False,
+          }
+          Path("data/research_panel_summary.json").write_text(json.dumps(summary, indent=2) + "\n")
+          print(json.dumps(summary, indent=2))
+          PY
+      - name: Upload chronological panel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kalshi-research-panel-${{ github.event.workflow_run.id }}
+          path: data/research_panel*
+          if-no-files-found: error
+          retention-days: 14

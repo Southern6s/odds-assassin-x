@@ -16,6 +16,16 @@ on:
         required: true
         default: "5"
         type: string
+      max_catalog_pages_per_tier:
+        description: "Catalog pages per live/archive tier to inspect for resolved markets"
+        required: true
+        default: "2"
+        type: string
+      max_catalog_markets:
+        description: "Maximum evenly distributed resolved catalog markets to add"
+        required: true
+        default: "300"
+        type: string
 
 permissions:
   contents: read
@@ -29,12 +39,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
-      - name: Validate requested time window
+      - name: Validate requested time window and page budgets
         shell: bash
         env:
           MIN_TS: ${{ inputs.min_ts }}
           MAX_TS: ${{ inputs.max_ts }}
           MAX_TRADE_PAGES: ${{ inputs.max_trade_pages_per_tier }}
+          MAX_CATALOG_PAGES: ${{ inputs.max_catalog_pages_per_tier }}
+          MAX_CATALOG_MARKETS: ${{ inputs.max_catalog_markets }}
         run: |
           set -euo pipefail
           [[ "$MIN_TS" =~ ^[0-9]{1,12}$ ]] || { echo "min_ts must be Unix seconds"; exit 1; }
@@ -42,6 +54,10 @@ jobs:
           (( MAX_TS > MIN_TS )) || { echo "max_ts must be greater than min_ts"; exit 1; }
           [[ "$MAX_TRADE_PAGES" =~ ^[0-9]{1,4}$ ]] || { echo "max_trade_pages_per_tier must be a positive integer"; exit 1; }
           (( MAX_TRADE_PAGES >= 1 && MAX_TRADE_PAGES <= 1000 )) || { echo "max_trade_pages_per_tier must be between 1 and 1000"; exit 1; }
+          [[ "$MAX_CATALOG_PAGES" =~ ^[0-9]{1,2}$ ]] || { echo "max_catalog_pages_per_tier must be a positive integer"; exit 1; }
+          (( MAX_CATALOG_PAGES >= 1 && MAX_CATALOG_PAGES <= 10 )) || { echo "max_catalog_pages_per_tier must be between 1 and 10"; exit 1; }
+          [[ "$MAX_CATALOG_MARKETS" =~ ^[0-9]{1,4}$ ]] || { echo "max_catalog_markets must be a positive integer"; exit 1; }
+          (( MAX_CATALOG_MARKETS >= 1 && MAX_CATALOG_MARKETS <= 2000 )) || { echo "max_catalog_markets must be between 1 and 2000"; exit 1; }
       - name: Check out repository
         uses: actions/checkout@v4
       - name: Set up Python
@@ -57,12 +73,27 @@ jobs:
           --max-ts "${{ inputs.max_ts }}"
           --max-pages-per-tier "${{ inputs.max_trade_pages_per_tier }}"
           --output data/trade_snapshots.jsonl
-      - name: Hydrate metadata for exactly the traded markets
+      - name: Hydrate metadata for traded markets
         run: >-
           python -m engine.trade_market_hydrator
           --trades data/trade_snapshots.jsonl
+          --output data/trade_market_snapshots.jsonl
+      - name: Discover bounded live and historical market catalog
+        run: >-
+          python -m engine.catalog_discovery
+          --max-pages-per-tier "${{ inputs.max_catalog_pages_per_tier }}"
+          --output data/catalog_market_snapshots.jsonl
+          --state-file data/catalog_market_state.json
+      - name: Add resolved ordinary binary markets from requested settlement window
+        run: >-
+          python -m engine.research_market_union
+          --hydrated data/trade_market_snapshots.jsonl
+          --catalog data/catalog_market_snapshots.jsonl
+          --min-ts "${{ inputs.min_ts }}"
+          --max-ts "${{ inputs.max_ts }}"
+          --max-catalog-markets "${{ inputs.max_catalog_markets }}"
           --output data/market_snapshots.jsonl
-      - name: Collect bounded historical trades for hydrated sample markets
+      - name: Collect bounded historical trades for research markets
         run: >-
           python -m engine.market_trade_collector
           --markets data/market_snapshots.jsonl
@@ -70,7 +101,7 @@ jobs:
           --max-ts "${{ inputs.max_ts }}"
           --max-pages-per-tier "${{ inputs.max_trade_pages_per_tier }}"
           --output data/trade_snapshots.jsonl
-      - name: Collect historical one-minute candles for hydrated markets
+      - name: Collect historical one-minute candles for research markets
         run: >-
           python -m engine.candlestick_collector
           --markets data/market_snapshots.jsonl

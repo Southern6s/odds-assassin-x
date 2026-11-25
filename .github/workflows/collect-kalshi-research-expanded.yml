@@ -78,6 +78,15 @@ jobs:
           python -m engine.trade_market_hydrator
           --trades data/trade_snapshots.jsonl
           --output data/trade_market_snapshots.jsonl
+      - name: Restore resumable catalog discovery checkpoint
+        uses: actions/cache@v4
+        with:
+          path: |
+            data/catalog_market_snapshots.jsonl
+            data/catalog_market_state.json
+          key: kalshi-catalog-${{ github.ref_name }}-${{ github.run_id }}
+          restore-keys: |
+            kalshi-catalog-${{ github.ref_name }}-
       - name: Discover expanded live and historical market catalog
         run: >-
           python -m engine.catalog_discovery
@@ -142,6 +151,7 @@ jobs:
               "paper_only": True,
               "live_trading": False,
           }
+          Path("data").mkdir(parents=True, exist_ok=True)
           Path("data/collection_manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
           print(json.dumps(manifest, indent=2))
           PY

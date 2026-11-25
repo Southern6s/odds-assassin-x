@@ -179,7 +179,11 @@ The workflow:
 It does not enumerate the entire market catalog, commit collected data to the
 repository, or submit orders. For broad market discovery, use the separate
 **Discover Kalshi market universe** or **Discover open Kalshi markets**
-workflows, which have their own resumable page limits and checkpoints.
+workflows, which have their own resumable page limits and checkpoints. The
+open-market workflow explicitly excludes Kalshi multivariate combo markets
+(`mve_filter=exclude`) so its pages are not dominated by auto-generated
+multi-leg combinations; its checkpoint/cache namespace is isolated from older
+unfiltered runs.
 
 Start with a short interval and the default page cap. Review the collection
 artifact before attempting a larger historical backfill. These workflows are

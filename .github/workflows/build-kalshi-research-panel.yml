@@ -105,12 +105,21 @@ jobs:
                   raise SystemExit("Panel row missing forecast_at or resolved_at")
               if row["resolved_at"] <= row["forecast_at"]:
                   raise SystemExit("Outcome is not strictly after its forecast cutoff")
+              if row.get("probability_label_yes") not in (0, 1):
+                  raise SystemExit("Panel row has an invalid probability_label_yes outcome")
+          quoted_rows = sum(
+              isinstance(row.get("market_yes_mid"), (int, float))
+              and 0 <= row["market_yes_mid"] <= 1
+              for row in rows
+          )
           summary = {
               "rows": len(rows),
               "unique_markets": len({r["market_ticker"] for r in rows}),
               "unique_events": len({r.get("event_ticker") for r in rows if r.get("event_ticker")}),
               "cutoffs": len({r["forecast_at"] for r in rows}),
-              "labels": dict(Counter(str(r.get("label")) for r in rows)),
+              "labels_yes_no": dict(Counter(str(r["probability_label_yes"]) for r in rows)),
+              "quoted_rows_with_midpoint": quoted_rows,
+              "rows_without_midpoint": len(rows) - quoted_rows,
               "duplicate_market_cutoff_rows": 0,
               "strictly_future_settlements": True,
               "paper_only": True,

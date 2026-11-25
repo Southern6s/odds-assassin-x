@@ -92,6 +92,7 @@ jobs:
             --output data/research_panel.jsonl
           python - <<'PY'
           import json
+          import math
           from collections import Counter
           from pathlib import Path
 
@@ -105,20 +106,67 @@ jobs:
                   raise SystemExit("Panel row missing forecast_at or resolved_at")
               if row["resolved_at"] <= row["forecast_at"]:
                   raise SystemExit("Outcome is not strictly after its forecast cutoff")
+
+          # Quote coverage and midpoint baselines are descriptive diagnostics.
+          # Repeated hourly rows are clustered by market, so also report one
+          # earliest quoted observation per market to reduce repeated weighting.
+          quoted = []
+          for row in rows:
+              mid = row.get("market_yes_mid")
+              bid, ask = row.get("market_yes_bid"), row.get("market_yes_ask")
+              age = row.get("quote_age_seconds")
+              if (isinstance(mid, (int, float)) and math.isfinite(mid)
+                      and 0 <= mid <= 1
+                      and isinstance(bid, (int, float)) and isinstance(ask, (int, float))
+                      and 0 <= bid <= ask <= 1
+                      and isinstance(age, (int, float)) and 0 <= age <= 300):
+                  quoted.append(row)
+
+          def midpoint_metrics(observations):
+              if not observations:
+                  return None
+              brier = sum((r["market_yes_mid"] - r["probability_label_yes"]) ** 2
+                          for r in observations) / len(observations)
+              accuracy = sum((r["market_yes_mid"] >= 0.5) == bool(r["probability_label_yes"])
+                             for r in observations) / len(observations)
+              return {"observations": len(observations),
+                      "brier_score": round(brier, 6),
+                      "directional_accuracy": round(accuracy, 6),
+                      "neutral_50pct_brier": 0.25}
+
+          first_quote_by_market = {}
+          for row in sorted(quoted, key=lambda r: r["forecast_at"]):
+              first_quote_by_market.setdefault(row["market_ticker"], row)
+          settlement_markets_by_date = {
+              (r["market_ticker"], r["resolved_at"][:10]) for r in rows
+          }
+          settlement_date_counts = Counter(date for _, date in settlement_markets_by_date)
           summary = {
               "rows": len(rows),
               "unique_markets": len({r["market_ticker"] for r in rows}),
               "unique_events": len({r.get("event_ticker") for r in rows if r.get("event_ticker")}),
               "cutoffs": len({r["forecast_at"] for r in rows}),
+              "forecast_range": ([min(r["forecast_at"] for r in rows),
+                                 max(r["forecast_at"] for r in rows)] if rows else None),
+              "settlement_date_market_counts": dict(sorted(settlement_date_counts.items())),
               "labels": dict(Counter(str(r.get("probability_label_yes")) for r in rows)),
+              "quote_coverage": {
+                  "rows_with_valid_yes_midpoint": len(quoted),
+                  "row_coverage_fraction": round(len(quoted) / len(rows), 6) if rows else 0,
+                  "unique_markets_with_quotes": len(first_quote_by_market),
+                  "repeated_observation_midpoint": midpoint_metrics(quoted),
+                  "earliest_quoted_observation_per_market_midpoint": midpoint_metrics(
+                      list(first_quote_by_market.values())
+                  ),
+              },
               "duplicate_market_cutoff_rows": 0,
               "strictly_future_settlements": True,
+              "midpoint_metrics_are_descriptive_not_independent": True,
               "paper_only": True,
               "live_trading": False,
           }
           Path("data/research_panel_summary.json").write_text(json.dumps(summary, indent=2) + "\n")
           print(json.dumps(summary, indent=2))
-          PY
       - name: Upload chronological panel artifact
         uses: actions/upload-artifact@v4
         with:

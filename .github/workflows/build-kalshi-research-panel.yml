@@ -122,7 +122,7 @@ jobs:
       - name: Upload chronological panel artifact
         uses: actions/upload-artifact@v4
         with:
-          name: kalshi-research-panel-${{ github.event.workflow_run.id }}
+          name: kalshi-research-panel-${{ github.event.workflow_run.id || inputs.source_run_id }}
           path: data/research_panel*
           if-no-files-found: error
           retention-days: 14

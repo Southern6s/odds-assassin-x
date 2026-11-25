@@ -1,0 +1,64 @@
+name: Discover open Kalshi markets
+
+on:
+  workflow_dispatch:
+    inputs:
+      max_pages:
+        description: "Maximum open-market pages to read (1000 markets/page)"
+        required: true
+        default: "5"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kalshi-open-market-discovery
+  cancel-in-progress: false
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Validate page budget
+        shell: bash
+        env:
+          MAX_PAGES: ${{ inputs.max_pages }}
+        run: |
+          set -euo pipefail
+          [[ "$MAX_PAGES" =~ ^[0-9]{1,3}$ ]] || { echo "max_pages must be a positive integer"; exit 1; }
+          (( MAX_PAGES >= 1 && MAX_PAGES <= 100 )) || { echo "max_pages must be between 1 and 100"; exit 1; }
+      - name: Check out discovery code
+        uses: actions/checkout@v4
+        with:
+          ref: feature/market-intelligence-foundation
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Restore open-market checkpoint
+        uses: actions/cache@v4
+        with:
+          path: |
+            data/open_market_snapshots.jsonl
+            data/open_market_state.json
+          key: kalshi-open-markets-${{ github.run_id }}
+          restore-keys: |
+            kalshi-open-markets-
+      - name: Discover resumable slice of open markets
+        run: >-
+          python -m engine.open_market_discovery
+          --max-pages "${{ inputs.max_pages }}"
+          --output data/open_market_snapshots.jsonl
+          --state-file data/open_market_state.json
+      - name: Upload open-market slice
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kalshi-open-markets-${{ github.run_id }}
+          path: data/
+          if-no-files-found: warn
+          retention-days: 14

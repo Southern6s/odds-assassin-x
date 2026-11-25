@@ -53,11 +53,11 @@ jobs:
           [[ "$MAX_TS" =~ ^[0-9]{1,12}$ ]] || { echo "max_ts must be Unix seconds"; exit 1; }
           (( MAX_TS > MIN_TS )) || { echo "max_ts must be greater than min_ts"; exit 1; }
           [[ "$MAX_TRADE_PAGES" =~ ^[0-9]{1,4}$ ]] || { echo "max_trade_pages_per_tier must be a positive integer"; exit 1; }
-          (( MAX_TRADE_PAGES >= 1 && MAX_TRADE_PAGES <= 20 )) || { echo "max_trade_pages_per_tier must be between 1 and 1000"; exit 1; }
+          (( MAX_TRADE_PAGES >= 1 && MAX_TRADE_PAGES <= 20 )) || { echo "max_trade_pages_per_tier must be between 1 and 20"; exit 1; }
           [[ "$MAX_CATALOG_PAGES" =~ ^[0-9]{1,2}$ ]] || { echo "max_catalog_pages_per_tier must be a positive integer"; exit 1; }
           (( MAX_CATALOG_PAGES >= 1 && MAX_CATALOG_PAGES <= 10 )) || { echo "max_catalog_pages_per_tier must be between 1 and 10"; exit 1; }
           [[ "$MAX_CATALOG_MARKETS" =~ ^[0-9]{1,4}$ ]] || { echo "max_catalog_markets must be a positive integer"; exit 1; }
-          (( MAX_CATALOG_MARKETS >= 1 && MAX_CATALOG_MARKETS <= 1000 )) || { echo "max_catalog_markets must be between 1 and 2000"; exit 1; }
+          (( MAX_CATALOG_MARKETS >= 1 && MAX_CATALOG_MARKETS <= 1000 )) || { echo "max_catalog_markets must be between 1 and 1000"; exit 1; }
       - name: Check out repository
         uses: actions/checkout@v4
       - name: Set up Python
@@ -152,7 +152,7 @@ jobs:
               "live_trading": False,
           }
           Path("data").mkdir(parents=True, exist_ok=True)
-          Path("data/collection_manifest.json").write_text(json.dumps(manifest, indent=2) + "\\n")
+          Path("data/collection_manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
           print(json.dumps(manifest, indent=2))
           PY
         env:

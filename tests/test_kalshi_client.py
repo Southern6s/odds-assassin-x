@@ -41,6 +41,22 @@ class KalshiClientTests(unittest.TestCase):
         self.assertEqual(opener.call_count, 2)
         self.assertIn("cursor=page-2", opener.call_args_list[1].args[0].full_url)
 
+    def test_get_market_page_passes_live_status_filter(self):
+        client, opener = self.client_with_pages([
+            {"markets": [{"ticker": "OPEN"}], "cursor": ""},
+        ])
+        markets, cursor = client.get_market_page(
+            "markets", limit=1000, status="open"
+        )
+        self.assertEqual([item["ticker"] for item in markets], ["OPEN"])
+        self.assertIsNone(cursor)
+        self.assertIn("status=open", opener.call_args.args[0].full_url)
+
+    def test_get_market_page_rejects_status_on_historical_tier(self):
+        client = KalshiPublicClient(opener=Mock())
+        with self.assertRaises(ValueError):
+            client.get_market_page("historical/markets", status="open")
+
     def test_all_market_tiers_include_archived_markets(self):
         client, opener = self.client_with_pages([
             {"markets": [{"ticker": "LIVE"}, {"ticker": "DUP"}], "cursor": ""},

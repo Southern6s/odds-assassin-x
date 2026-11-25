@@ -4,16 +4,16 @@ on:
   workflow_dispatch:
     inputs:
       min_ts:
-        description: "Start of trade window (Unix seconds, inclusive)"
+        description: "Start of trade/candle window (Unix seconds, inclusive)"
         required: true
         type: string
       max_ts:
-        description: "End of trade window (Unix seconds, exclusive)"
+        description: "End of trade/candle window (Unix seconds, exclusive)"
         required: true
         type: string
-      max_pages_per_tier:
-        description: "Optional market-page cap per live/archive tier (blank = all pages)"
-        required: false
+      max_trade_pages_per_tier:
+        description: "Trade-page cap per live/archive tier (prevents oversized research artifacts)"
+        required: true
         default: "5"
         type: string
 
@@ -27,23 +27,21 @@ concurrency:
 jobs:
   collect:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 360
     steps:
       - name: Validate requested time window
         shell: bash
         env:
           MIN_TS: ${{ inputs.min_ts }}
           MAX_TS: ${{ inputs.max_ts }}
-          MAX_PAGES: ${{ inputs.max_pages_per_tier }}
+          MAX_TRADE_PAGES: ${{ inputs.max_trade_pages_per_tier }}
         run: |
           set -euo pipefail
           [[ "$MIN_TS" =~ ^[0-9]{1,12}$ ]] || { echo "min_ts must be Unix seconds"; exit 1; }
           [[ "$MAX_TS" =~ ^[0-9]{1,12}$ ]] || { echo "max_ts must be Unix seconds"; exit 1; }
           (( MAX_TS > MIN_TS )) || { echo "max_ts must be greater than min_ts"; exit 1; }
-          if [[ -n "$MAX_PAGES" ]]; then
-            [[ "$MAX_PAGES" =~ ^[0-9]{1,4}$ ]] || { echo "max_pages_per_tier must be a positive integer"; exit 1; }
-            (( MAX_PAGES >= 1 && MAX_PAGES <= 1000 )) || { echo "max_pages_per_tier must be between 1 and 1000"; exit 1; }
-          fi
+          [[ "$MAX_TRADE_PAGES" =~ ^[0-9]{1,4}$ ]] || { echo "max_trade_pages_per_tier must be a positive integer"; exit 1; }
+          (( MAX_TRADE_PAGES >= 1 && MAX_TRADE_PAGES <= 1000 )) || { echo "max_trade_pages_per_tier must be between 1 and 1000"; exit 1; }
       - name: Check out repository
         uses: actions/checkout@v4
       - name: Set up Python
@@ -52,24 +50,34 @@ jobs:
           python-version: "3.12"
       - name: Install dependencies
         run: pip install -r requirements.txt
-      - name: Collect market snapshots
-        shell: bash
-        env:
-          MAX_PAGES: ${{ inputs.max_pages_per_tier }}
-        run: |
-          set -euo pipefail
-          mkdir -p data
-          if [[ -n "$MAX_PAGES" ]]; then
-            python -m engine.collector --output data/market_snapshots.jsonl --max-pages-per-tier "$MAX_PAGES"
-          else
-            python -m engine.collector --output data/market_snapshots.jsonl
-          fi
       - name: Collect bounded public trades
         run: >-
           python -m engine.trade_collector
           --min-ts "${{ inputs.min_ts }}"
           --max-ts "${{ inputs.max_ts }}"
+          --max-pages-per-tier "${{ inputs.max_trade_pages_per_tier }}"
           --output data/trade_snapshots.jsonl
+      - name: Hydrate metadata for exactly the traded markets
+        run: >-
+          python -m engine.trade_market_hydrator
+          --trades data/trade_snapshots.jsonl
+          --output data/market_snapshots.jsonl
+      - name: Collect bounded historical trades for hydrated sample markets
+        run: >-
+          python -m engine.market_trade_collector
+          --markets data/market_snapshots.jsonl
+          --min-ts "${{ inputs.min_ts }}"
+          --max-ts "${{ inputs.max_ts }}"
+          --max-pages-per-tier "${{ inputs.max_trade_pages_per_tier }}"
+          --output data/trade_snapshots.jsonl
+      - name: Collect historical one-minute candles for hydrated markets
+        run: >-
+          python -m engine.candlestick_collector
+          --markets data/market_snapshots.jsonl
+          --start-ts "${{ inputs.min_ts }}"
+          --end-ts "${{ inputs.max_ts }}"
+          --period-interval 1
+          --output data/candlestick_snapshots.jsonl
       - name: Upload research data artifact
         if: always()
         uses: actions/upload-artifact@v4

@@ -1,0 +1,197 @@
+"""Chronological walk-forward scoring for the experimental event model.
+
+Every fold fits only on observations whose outcomes settled by the first
+forecast timestamp in that fold. No orders or execution simulation are run.
+"""
+from __future__ import annotations
+
+import argparse
+from datetime import datetime, timezone
+import json
+import math
+from pathlib import Path
+from typing import Any, Iterable, Mapping
+
+from .logistic_model import fit_logistic_model
+from .probability import brier_score, log_loss
+
+
+def _time(value: Any, field: str) -> datetime:
+    try:
+        parsed = value if isinstance(value, datetime) else datetime.fromisoformat(
+            value.replace("Z", "+00:00")
+        )
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise ValueError(f"{field} must be an ISO-8601 timestamp") from exc
+    if parsed.tzinfo is None:
+        raise ValueError(f"{field} must be timezone-aware")
+    return parsed.astimezone(timezone.utc)
+
+
+def _score(probabilities: list[float], labels: list[int]) -> dict[str, float]:
+    count = len(labels)
+    if not count:
+        raise ValueError("cannot score an empty test fold")
+    return {
+        "observations": count,
+        "brier": sum(brier_score(p, y) for p, y in zip(probabilities, labels)) / count,
+        "logloss": sum(log_loss(p, y) for p, y in zip(probabilities, labels)) / count,
+        "accuracy": sum((p >= 0.5) == bool(y) for p, y in zip(probabilities, labels)) / count,
+        "mean_probability": sum(probabilities) / count,
+        "observed_yes_frequency": sum(labels) / count,
+    }
+
+
+def evaluate_walk_forward(
+    rows: Iterable[Mapping[str, Any]],
+    feature_names: Iterable[str],
+    *,
+    min_train_size: int = 100,
+    test_cutoffs: int = 1,
+    step_cutoffs: int | None = None,
+) -> dict[str, Any]:
+    """Evaluate by distinct forecast cutoffs, fitting once per test window."""
+    names = tuple(feature_names)
+    if not names or len(set(names)) != len(names):
+        raise ValueError("feature_names must be non-empty and unique")
+    if isinstance(min_train_size, bool) or min_train_size < 2:
+        raise ValueError("min_train_size must be at least 2")
+    if isinstance(test_cutoffs, bool) or test_cutoffs < 1:
+        raise ValueError("test_cutoffs must be positive")
+    step = test_cutoffs if step_cutoffs is None else step_cutoffs
+    if isinstance(step, bool) or step < 1:
+        raise ValueError("step_cutoffs must be positive")
+
+    items = list(rows)
+    if not items:
+        raise ValueError("at least one research row is required")
+    cutoffs = set()
+    for row in items:
+        forecast = _time(row.get("forecast_at"), "forecast_at")
+        resolved = _time(row.get("resolved_at"), "resolved_at")
+        if forecast >= resolved:
+            raise ValueError("forecast_at must precede resolved_at")
+        label = row.get("probability_label_yes")
+        if isinstance(label, bool) or label not in (0, 1):
+            raise ValueError("probability_label_yes must be 0 or 1")
+        cutoffs.add(forecast)
+        for name in names:
+            key = name if name.startswith("feature_") else f"feature_{name}"
+            raw = row.get(key)
+            if raw is None or isinstance(raw, bool):
+                raise ValueError(f"missing or invalid feature: {key}")
+            try:
+                number = float(raw)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"feature must be numeric: {key}") from exc
+            if not math.isfinite(number):
+                raise ValueError(f"feature must be finite: {key}")
+    ordered = sorted(cutoffs)
+    folds = []
+    for start in range(0, len(ordered), step):
+        window = ordered[start:start + test_cutoffs]
+        if len(window) < test_cutoffs:
+            break
+        cutoff = window[0]
+        training = [
+            row for row in items
+            if _time(row["resolved_at"], "resolved_at") <= cutoff
+        ]
+        if len(training) < min_train_size:
+            continue
+        testing = [
+            row for row in items
+            if _time(row["forecast_at"], "forecast_at") in window
+        ]
+        if not testing:
+            continue
+        model = fit_logistic_model(
+            training, names, as_of=cutoff, min_training_rows=min_train_size
+        )
+        labels = [int(row["probability_label_yes"]) for row in testing]
+        model_probs = [model.predict_probability(row) for row in testing]
+        market_pairs = [
+            (float(row["market_yes_mid"]), label)
+            for row, label in zip(testing, labels)
+            if row.get("market_yes_mid") is not None
+        ]
+        neutral_probs = [0.5] * len(labels)
+        fold = {
+            "test_start": window[0].isoformat(),
+            "test_end": window[-1].isoformat(),
+            "training_rows": model.training_rows,
+            "training_yes_rate": model.training_yes_rate,
+            "model": _score(model_probs, labels),
+            "neutral_50": _score(neutral_probs, labels),
+            "market_midpoint": (
+                _score([p for p, _ in market_pairs], [y for _, y in market_pairs])
+                if market_pairs else None
+            ),
+            "market_quote_coverage": len(market_pairs) / len(testing),
+        }
+        folds.append(fold)
+    if not folds:
+        raise ValueError(
+            "no valid folds: add more forecast cutoffs and matured training outcomes"
+        )
+
+    def aggregate(metric: str, key: str) -> dict[str, float] | None:
+        parts = [fold[key] for fold in folds if fold[key] is not None]
+        total = sum(part["observations"] for part in parts)
+        if not total:
+            return None
+        return {
+            "observations": total,
+            metric: sum(part[metric] * part["observations"] for part in parts) / total,
+        }
+
+    return {
+        "folds": folds,
+        "aggregate": {
+            "model_brier": aggregate("brier", "model"),
+            "neutral_brier": aggregate("brier", "neutral_50"),
+            "market_midpoint_brier": aggregate("brier", "market_midpoint"),
+            "model_logloss": aggregate("logloss", "model"),
+            "market_midpoint_logloss": aggregate("logloss", "market_midpoint"),
+        },
+        "paper_only": True,
+        "live_trading": False,
+        "execution_simulated": False,
+    }
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Walk-forward evaluate research rows (paper-only; no orders)"
+    )
+    parser.add_argument("--dataset", required=True)
+    parser.add_argument("--features", required=True,
+                        help="Comma-separated allowlist of feature names")
+    parser.add_argument("--min-train-size", type=int, default=100)
+    parser.add_argument("--test-cutoffs", type=int, default=1)
+    parser.add_argument("--step-cutoffs", type=int, default=None)
+    args = parser.parse_args(argv)
+    try:
+        rows = []
+        with Path(args.dataset).open("r", encoding="utf-8") as handle:
+            for line_number, line in enumerate(handle, 1):
+                if not line.strip():
+                    continue
+                row = json.loads(line)
+                if not isinstance(row, dict):
+                    raise ValueError(f"line {line_number} must be a JSON object")
+                rows.append(row)
+        report = evaluate_walk_forward(
+            rows, [item.strip() for item in args.features.split(",") if item.strip()],
+            min_train_size=args.min_train_size,
+            test_cutoffs=args.test_cutoffs,
+            step_cutoffs=args.step_cutoffs,
+        )
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        parser.exit(2, f"Walk-forward evaluation failed: {exc}\n")
+    print(json.dumps(report, indent=2, allow_nan=False))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -110,7 +110,7 @@ jobs:
               "unique_markets": len({r["market_ticker"] for r in rows}),
               "unique_events": len({r.get("event_ticker") for r in rows if r.get("event_ticker")}),
               "cutoffs": len({r["forecast_at"] for r in rows}),
-              "labels": dict(Counter(str(r.get("label")) for r in rows)),
+              "labels": dict(Counter(str(r.get("probability_label_yes")) for r in rows)),
               "duplicate_market_cutoff_rows": 0,
               "strictly_future_settlements": True,
               "paper_only": True,

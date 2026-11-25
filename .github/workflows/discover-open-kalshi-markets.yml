@@ -31,8 +31,6 @@ jobs:
           (( MAX_PAGES >= 1 && MAX_PAGES <= 100 )) || { echo "max_pages must be between 1 and 100"; exit 1; }
       - name: Check out discovery code
         uses: actions/checkout@v4
-        with:
-          ref: feature/market-intelligence-foundation
       - name: Set up Python
         uses: actions/setup-python@v5
         with:

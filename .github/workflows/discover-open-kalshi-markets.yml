@@ -43,9 +43,9 @@ jobs:
           path: |
             data/open_market_snapshots.jsonl
             data/open_market_state.json
-          key: kalshi-open-markets-${{ github.run_id }}
+          key: kalshi-open-markets-non-mve-${{ github.run_id }}
           restore-keys: |
-            kalshi-open-markets-
+            kalshi-open-markets-non-mve-
       - name: Discover resumable slice of open markets
         run: >-
           python -m engine.open_market_discovery

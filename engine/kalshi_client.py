@@ -129,13 +129,15 @@ class KalshiPublicClient:
 
     def get_market_page(
         self, endpoint: str, *, cursor: str | None = None, limit: int = 1000,
-        status: str | None = None,
+        status: str | None = None, mve_filter: str | None = None,
     ) -> tuple[list[dict[str, Any]], str | None]:
-        """Fetch one validated market page, optionally filtered by live status."""
+        """Fetch one validated market page with optional status/MVE filters."""
         if endpoint not in ("markets", "historical/markets"):
             raise ValueError("endpoint must be markets or historical/markets")
         if status is not None and (endpoint != "markets" or not status.strip()):
             raise ValueError("status filters require a non-empty live-market status")
+        if mve_filter is not None and mve_filter not in ("only", "exclude"):
+            raise ValueError("mve_filter must be 'only', 'exclude', or None")
         if not 1 <= limit <= 1000:
             raise ValueError("limit must be between 1 and 1000")
         if cursor is not None and (not isinstance(cursor, str) or not cursor):
@@ -143,6 +145,8 @@ class KalshiPublicClient:
         params: dict[str, Any] = {"limit": limit}
         if status is not None:
             params["status"] = status
+        if mve_filter is not None:
+            params["mve_filter"] = mve_filter
         if cursor is not None:
             params["cursor"] = cursor
         payload = self._get(endpoint, params)

@@ -46,11 +46,12 @@ class KalshiClientTests(unittest.TestCase):
             {"markets": [{"ticker": "OPEN"}], "cursor": ""},
         ])
         markets, cursor = client.get_market_page(
-            "markets", limit=1000, status="open"
+            "markets", limit=1000, status="open", mve_filter="exclude"
         )
         self.assertEqual([item["ticker"] for item in markets], ["OPEN"])
         self.assertIsNone(cursor)
         self.assertIn("status=open", opener.call_args.args[0].full_url)
+        self.assertIn("mve_filter=exclude", opener.call_args.args[0].full_url)
 
     def test_get_market_page_rejects_status_on_historical_tier(self):
         client = KalshiPublicClient(opener=Mock())

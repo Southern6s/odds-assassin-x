@@ -78,6 +78,13 @@ jobs:
           --end-ts "${{ inputs.max_ts }}"
           --period-interval 1
           --output data/candlestick_snapshots.jsonl
+      - name: Build ordinary binary research subset
+        run: >-
+          python -m engine.filter_research_universe
+          --markets data/market_snapshots.jsonl
+          --trades data/trade_snapshots.jsonl
+          --candlesticks data/candlestick_snapshots.jsonl
+          --output-dir data/ordinary_binary
       - name: Upload research data artifact
         if: always()
         uses: actions/upload-artifact@v4

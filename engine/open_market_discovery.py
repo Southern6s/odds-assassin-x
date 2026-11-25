@@ -15,8 +15,9 @@ from .catalog_discovery import _atomic_json, _load_seen_tickers
 from .kalshi_client import KalshiPublicClient, enrich_market_category, series_category_map
 from .kalshi_data import append_jsonl, snapshot_record
 
-STATE_VERSION = 1
+STATE_VERSION = 2
 STATUS = "open"
+MVE_FILTER = "exclude"
 
 
 def discover_open_resumable(
@@ -41,13 +42,15 @@ def discover_open_resumable(
             state.get("version") != STATE_VERSION
             or state.get("limit") != limit
             or state.get("status") != STATUS
-        ):
+            or state.get("mve_filter") != MVE_FILTER
+        ): 
             raise ValueError("Open-market checkpoint settings mismatch")
     else:
         state = {
             "version": STATE_VERSION,
             "limit": limit,
             "status": STATUS,
+            "mve_filter": MVE_FILTER,
             "cursor": None,
             "pages_completed": 0,
             "scanned": 0,
@@ -65,7 +68,8 @@ def discover_open_resumable(
 
     while not state.get("complete", False) and pages_this_run < max_pages:
         page, next_cursor = client.get_market_page(
-            "markets", cursor=state["cursor"], limit=limit, status=STATUS
+            "markets", cursor=state["cursor"], limit=limit, status=STATUS,
+            mve_filter=MVE_FILTER,
         )
         captured_at = datetime.now(timezone.utc)
         records = []

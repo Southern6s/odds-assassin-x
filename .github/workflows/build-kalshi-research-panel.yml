@@ -4,18 +4,24 @@ on:
   workflow_run:
     workflows: ["Collect Kalshi research data"]
     types: [completed]
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: "Successful research collection run ID"
+        required: true
+        type: string
 
 permissions:
   actions: read
   contents: read
 
 concurrency:
-  group: kalshi-research-panel-${{ github.event.workflow_run.id }}
+  group: kalshi-research-panel-${{ github.event.workflow_run.id || inputs.source_run_id }}
   cancel-in-progress: false
 
 jobs:
   build-panel:
-    if: github.event.workflow_run.conclusion == 'success'
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
@@ -32,7 +38,7 @@ jobs:
       - name: Download completed collection artifact
         env:
           GH_TOKEN: ${{ github.token }}
-          SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id || inputs.source_run_id }}
         run: |
           set -euo pipefail
           gh run download "$SOURCE_RUN_ID" --repo "$GITHUB_REPOSITORY" \

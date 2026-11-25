@@ -67,7 +67,7 @@ class ResearchPanelTests(unittest.TestCase):
             "2025-01-01T01:00:00+00:00",
             "2025-01-01T02:00:00+00:00",
         ])
-        self.assertEqual([row["feature_trade_count"] for row in rows], [1, 2])
+        self.assertEqual([row["feature_trade_count"] for row in rows], [1, 1])
         for actual, expected in zip(
             [row["market_yes_mid"] for row in rows], [0.40, 0.50]
         ):

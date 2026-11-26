@@ -34,14 +34,15 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
       - name: Download completed panel artifact
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PANEL_BUILD_RUN_ID: ${{ inputs.panel_build_run_id }}
-          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
-        run: |
-          set -euo pipefail
-          gh run download "$PANEL_BUILD_RUN_ID" --repo "$GITHUB_REPOSITORY" --name "kalshi-research-panel-$SOURCE_RUN_ID" --dir panel-artifact
-          test -s panel-artifact/data/research_panel.jsonl
+        uses: actions/download-artifact@v4
+        with:
+          name: kalshi-research-panel-${{ inputs.source_run_id }}
+          path: panel-artifact
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.panel_build_run_id }}
+      - name: Verify panel file
+        run: test -s panel-artifact/data/research_panel.jsonl
       - name: Run leakage-safe walk-forward evaluation
         run: |
           set -euo pipefail

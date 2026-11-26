@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       source_run_id:
-        description: "Successful research collection run ID"
+        description: "Collection run ID with an uploaded expanded-research artifact"
         required: true
         type: string
 
@@ -35,14 +35,25 @@ jobs:
           python-version: "3.12"
       - name: Install dependencies
         run: pip install -r requirements.txt
-      - name: Download completed collection artifact
+      - name: Download expanded collection artifact
         env:
           GH_TOKEN: ${{ github.token }}
           SOURCE_RUN_ID: ${{ github.event.workflow_run.id || inputs.source_run_id }}
         run: |
           set -euo pipefail
           gh run download "$SOURCE_RUN_ID" --repo "$GITHUB_REPOSITORY" \
-            --name "kalshi-research-$SOURCE_RUN_ID" --dir source-data
+            --name "kalshi-expanded-research-$SOURCE_RUN_ID" --dir source-data
+          test -s source-data/market_snapshots.jsonl
+          test -s source-data/trade_snapshots.jsonl
+          test -s source-data/candlestick_snapshots.jsonl
+      - name: Build ordinary-binary research subset
+        run: |
+          set -euo pipefail
+          python -m engine.filter_research_universe \
+            --markets source-data/market_snapshots.jsonl \
+            --trades source-data/trade_snapshots.jsonl \
+            --candlesticks source-data/candlestick_snapshots.jsonl \
+            --output-dir source-data/ordinary_binary
           test -s source-data/ordinary_binary/market_snapshots.jsonl
           test -s source-data/ordinary_binary/trade_snapshots.jsonl
           test -s source-data/ordinary_binary/candlestick_snapshots.jsonl
@@ -55,22 +66,26 @@ jobs:
           from pathlib import Path
 
           path = Path("source-data/ordinary_binary/candlestick_snapshots.jsonl")
-          stamps = []
+          first_stamp = None
+          last_stamp = None
           with path.open() as stream:
               for line in stream:
                   item = json.loads(line)
                   candle = item.get("candle", item)
                   stamp = candle.get("end_period_ts")
                   if isinstance(stamp, int) and not isinstance(stamp, bool) and stamp > 0:
-                      stamps.append(stamp)
-          if not stamps:
+                      first_stamp = stamp if first_stamp is None else min(first_stamp, stamp)
+                      last_stamp = stamp if last_stamp is None else max(last_stamp, stamp)
+          if first_stamp is None or last_stamp is None:
               raise SystemExit("No valid candle timestamps in ordinary-binary artifact")
 
-          # Use complete UTC-hour cutoffs fully covered by the collected candle window.
-          first_hour = ((min(stamps) + 3599) // 3600) * 3600
-          last_hour = (max(stamps) // 3600) * 3600
+          # Use the most recent 1,000 complete UTC-hour cutoffs supported by the data.
+          first_hour = ((first_stamp + 3599) // 3600) * 3600
+          last_hour = (last_stamp // 3600) * 3600
           if last_hour < first_hour:
               raise SystemExit("Candle window does not span a complete hourly cutoff")
+          # Build a recent 7-day panel; retain a 24-hour feature lookback.
+          first_hour = max(first_hour, last_hour - 167 * 3600)
           start = datetime.fromtimestamp(first_hour, timezone.utc).isoformat()
           end = datetime.fromtimestamp(last_hour, timezone.utc).isoformat()
           print(json.dumps({"forecast_start": start, "forecast_end": end,
@@ -81,10 +96,54 @@ jobs:
           set -a
           source panel-window.env
           set +a
+          # Stream-slice large source files before the panel builder loads them.
+          python - <<'PY'
+          import json
+          import os
+          from datetime import datetime, timedelta, timezone
+          from pathlib import Path
+
+          start = datetime.fromisoformat(os.environ["FORECAST_START"])
+          end = datetime.fromisoformat(os.environ["FORECAST_END"])
+          trade_start = start - timedelta(hours=25)  # 24h feature age plus one full bucket
+          candle_start_ts = int(start.timestamp()) - 300
+          end_ts = int(end.timestamp())
+          base = Path("source-data/ordinary_binary")
+          specs = [
+              ("trade_snapshots.jsonl", "panel_trade_snapshots.jsonl", "trade"),
+              ("candlestick_snapshots.jsonl", "panel_candlestick_snapshots.jsonl", "candle"),
+          ]
+          for source_name, output_name, kind in specs:
+              source, output = base / source_name, base / output_name
+              kept = total = 0
+              with source.open(encoding="utf-8") as inp, output.open("w", encoding="utf-8") as out:
+                  for line in inp:
+                      if not line.strip():
+                          continue
+                      total += 1
+                      row = json.loads(line)
+                      payload = row.get(kind, row)
+                      if kind == "trade":
+                          stamp = payload.get("created_time")
+                          if not isinstance(stamp, str):
+                              continue
+                          when = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+                          if when.tzinfo is None or not trade_start <= when.astimezone(timezone.utc) <= end:
+                              continue
+                      else:
+                          stamp = payload.get("end_period_ts")
+                          if isinstance(stamp, bool) or not isinstance(stamp, int):
+                              continue
+                          if not candle_start_ts <= stamp <= end_ts:
+                              continue
+                      out.write(json.dumps(row, separators=(",", ":"), allow_nan=False) + "\n")
+                      kept += 1
+              print(json.dumps({"input": source_name, "records": total, "retained": kept}))
+          PY
           python -m engine.research_panel \
             --markets source-data/ordinary_binary/market_snapshots.jsonl \
-            --trades source-data/ordinary_binary/trade_snapshots.jsonl \
-            --candlesticks source-data/ordinary_binary/candlestick_snapshots.jsonl \
+            --trades source-data/ordinary_binary/panel_trade_snapshots.jsonl \
+            --candlesticks source-data/ordinary_binary/panel_candlestick_snapshots.jsonl \
             --forecast-start "$FORECAST_START" \
             --forecast-end "$FORECAST_END" \
             --step-seconds 3600 \
@@ -107,9 +166,6 @@ jobs:
               if row["resolved_at"] <= row["forecast_at"]:
                   raise SystemExit("Outcome is not strictly after its forecast cutoff")
 
-          # Quote coverage and midpoint baselines are descriptive diagnostics.
-          # Repeated hourly rows are clustered by market, so also report one
-          # earliest quoted observation per market to reduce repeated weighting.
           quoted = []
           for row in rows:
               mid = row.get("market_yes_mid")

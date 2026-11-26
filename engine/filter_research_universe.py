@@ -1,8 +1,8 @@
 """Filter collected Kalshi snapshots to ordinary, categorized binary markets.
 
-This is an offline research-preparation step. It excludes the Exotics category
-and known MVE-prefixed contracts even when the exchange labels them binary.
-It does not fetch data or place orders.
+The command-line path streams large trade/candle JSONL files so multi-million-row
+artifacts can be filtered without retaining them all in memory. This is offline
+research preparation only; it does not fetch data or place orders.
 """
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import argparse
 from collections import Counter
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 
 def read_jsonl(path: str | Path) -> list[dict[str, Any]]:
@@ -40,8 +40,7 @@ def is_ordinary_binary_market(record: dict[str, Any]) -> bool:
     ticker = market.get("ticker")
     event_ticker = market.get("event_ticker")
     category = market.get("category")
-    market_type = market.get("market_type")
-    if market_type != "binary":
+    if market.get("market_type") != "binary":
         return False
     if not isinstance(category, str) or not category.strip():
         return False
@@ -59,22 +58,19 @@ def filter_research_records(
     trade_snapshots: list[dict[str, Any]],
     candlestick_snapshots: list[dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
-    """Filter trades and candles to the retained ordinary binary market tickers."""
+    """In-memory helper retained for unit tests and small inputs."""
     kept_markets = [row for row in market_snapshots if is_ordinary_binary_market(row)]
     kept_tickers = {_market(row)["ticker"] for row in kept_markets}
-
-    kept_trades = []
-    for row in trade_snapshots:
-        trade = row.get("trade", row)
-        if isinstance(trade, dict) and trade.get("ticker") in kept_tickers:
-            kept_trades.append(row)
-
-    kept_candles = []
-    for row in candlestick_snapshots:
-        candle = row.get("candle", row)
-        if isinstance(candle, dict) and candle.get("market_ticker") in kept_tickers:
-            kept_candles.append(row)
-
+    kept_trades = [
+        row for row in trade_snapshots
+        if isinstance(row.get("trade", row), dict)
+        and row.get("trade", row).get("ticker") in kept_tickers
+    ]
+    kept_candles = [
+        row for row in candlestick_snapshots
+        if isinstance(row.get("candle", row), dict)
+        and row.get("candle", row).get("market_ticker") in kept_tickers
+    ]
     categories = Counter(
         str(_market(row).get("category") or "UNKNOWN") for row in market_snapshots
     )
@@ -114,9 +110,51 @@ def write_jsonl(path: str | Path, records: list[dict[str, Any]]) -> None:
         raise
 
 
+def filter_jsonl_stream(
+    source: str | Path,
+    destination: str | Path,
+    *,
+    ticker_field: str,
+    kept_tickers: set[str],
+) -> tuple[int, int]:
+    """Filter one JSONL file with bounded memory and atomically publish output."""
+    source_path, destination_path = Path(source), Path(destination)
+    destination_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination_path.with_name(destination_path.name + ".tmp")
+    total = kept = 0
+    try:
+        with source_path.open("r", encoding="utf-8") as input_handle, temporary.open(
+            "w", encoding="utf-8"
+        ) as output_handle:
+            for line_number, line in enumerate(input_handle, 1):
+                if not line.strip():
+                    continue
+                total += 1
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(f"{source_path}:{line_number}: invalid JSON") from exc
+                if not isinstance(record, dict):
+                    raise ValueError(
+                        f"{source_path}:{line_number}: each record must be an object"
+                    )
+                payload = record.get("trade" if ticker_field == "ticker" else "candle", record)
+                if isinstance(payload, dict) and payload.get(ticker_field) in kept_tickers:
+                    output_handle.write(json.dumps(
+                        record, separators=(",", ":"), sort_keys=True, allow_nan=False
+                    ))
+                    output_handle.write("\n")
+                    kept += 1
+        temporary.replace(destination_path)
+    except Exception:
+        temporary.unlink(missing_ok=True)
+        raise
+    return total, kept
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Filter Kalshi research snapshots to ordinary binary markets"
+        description="Stream-filter Kalshi research snapshots to ordinary binary markets"
     )
     parser.add_argument("--markets", required=True)
     parser.add_argument("--trades", required=True)
@@ -124,17 +162,45 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output-dir", default="data/ordinary_binary")
     args = parser.parse_args(argv)
     try:
-        markets, trades, candles, report = filter_research_records(
-            read_jsonl(args.markets), read_jsonl(args.trades),
-            read_jsonl(args.candlesticks),
-        )
+        # Market catalog is comparatively small; trades and candles can be millions
+        # of rows, so those files are processed one record at a time.
+        market_input = read_jsonl(args.markets)
+        markets = [row for row in market_input if is_ordinary_binary_market(row)]
+        kept_tickers = {_market(row)["ticker"] for row in markets}
         output = Path(args.output_dir)
         write_jsonl(output / "market_snapshots.jsonl", markets)
-        write_jsonl(output / "trade_snapshots.jsonl", trades)
-        write_jsonl(output / "candlestick_snapshots.jsonl", candles)
+        trades_total, trades_kept = filter_jsonl_stream(
+            args.trades, output / "trade_snapshots.jsonl",
+            ticker_field="ticker", kept_tickers=kept_tickers,
+        )
+        candles_total, candles_kept = filter_jsonl_stream(
+            args.candlesticks, output / "candlestick_snapshots.jsonl",
+            ticker_field="market_ticker", kept_tickers=kept_tickers,
+        )
     except (OSError, ValueError) as exc:
         parser.exit(2, f"Research universe filtering failed: {exc}\n")
-    report["output_dir"] = str(output)
+
+    categories = Counter(
+        str(_market(row).get("category") or "UNKNOWN") for row in market_input
+    )
+    report = {
+        "markets_input": len(market_input),
+        "markets_kept": len(markets),
+        "markets_excluded": len(market_input) - len(markets),
+        "trades_input": trades_total,
+        "trades_kept": trades_kept,
+        "trades_excluded": trades_total - trades_kept,
+        "candles_input": candles_total,
+        "candles_kept": candles_kept,
+        "candles_excluded": candles_total - candles_kept,
+        "categories_input": dict(sorted(categories.items())),
+        "excluded_categories": ["Exotics"],
+        "excluded_ticker_prefixes": ["KXMVE"],
+        "output_dir": str(output),
+        "paper_only": True,
+        "live_trading": False,
+        "streaming_large_files": True,
+    }
     print(json.dumps(report, indent=2, sort_keys=True))
     return 0
 

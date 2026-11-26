@@ -36,6 +36,30 @@ class WalkForwardTests(unittest.TestCase):
         self.assertFalse(report["live_trading"])
         self.assertFalse(report["execution_simulated"])
 
+    def test_skips_single_class_training_windows_until_both_labels_mature(self):
+        base = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        rows = []
+        labels_by_day = ([0, 0], [0, 1], [1, 0])
+        for day, labels in enumerate(labels_by_day):
+            cutoff = base + timedelta(days=day)
+            for index, label in enumerate(labels):
+                rows.append({
+                    "market_ticker": f"EARLY-{day}-{index}",
+                    "forecast_at": cutoff.isoformat(),
+                    "resolved_at": (cutoff + timedelta(hours=12)).isoformat(),
+                    "probability_label_yes": label,
+                    "feature_signal": float(label),
+                    "market_yes_mid": 0.5,
+                })
+
+        report = evaluate_walk_forward(
+            rows, ["signal"], min_train_size=2, test_cutoffs=1,
+        )
+        self.assertEqual(report["skipped_single_class_folds"], 1)
+        self.assertEqual(len(report["folds"]), 1)
+        self.assertEqual(report["folds"][0]["training_rows"], 4)
+        self.assertEqual(report["folds"][0]["training_yes_rate"], 0.25)
+
     def test_rejects_missing_features_and_no_valid_folds(self):
         broken = [dict(row) for row in self.rows]
         broken[0].pop("feature_yes_bid_contracts")

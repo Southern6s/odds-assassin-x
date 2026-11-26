@@ -88,6 +88,7 @@ def evaluate_walk_forward(
                 raise ValueError(f"feature must be finite: {key}")
     ordered = sorted(cutoffs)
     folds = []
+    skipped_single_class_folds = 0
     for start in range(0, len(ordered), step):
         window = ordered[start:start + test_cutoffs]
         if len(window) < test_cutoffs:
@@ -98,6 +99,12 @@ def evaluate_walk_forward(
             if _time(row["resolved_at"], "resolved_at") <= cutoff
         ]
         if len(training) < min_train_size:
+            continue
+        # Early history can have enough repeated observations but only one
+        # resolved outcome class. Such a window cannot fit logistic regression;
+        # skip it and resume once both YES and NO outcomes have matured.
+        if len({int(row["probability_label_yes"]) for row in training}) < 2:
+            skipped_single_class_folds += 1
             continue
         testing = [
             row for row in items
@@ -147,6 +154,7 @@ def evaluate_walk_forward(
 
     return {
         "folds": folds,
+        "skipped_single_class_folds": skipped_single_class_folds,
         "aggregate": {
             "model_brier": aggregate("brier", "model"),
             "neutral_brier": aggregate("brier", "neutral_50"),

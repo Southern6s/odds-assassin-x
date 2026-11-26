@@ -1,0 +1,97 @@
+name: Evaluate Kalshi panel walk-forward
+
+on:
+  workflow_dispatch:
+    inputs:
+      panel_build_run_id:
+        description: "GitHub Actions run ID that built the panel artifact"
+        required: true
+        type: string
+        default: "45771821686"
+      source_run_id:
+        description: "Original collection run ID used in the panel artifact name"
+        required: true
+        type: string
+        default: "45726061031"
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out current main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Download completed panel artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PANEL_BUILD_RUN_ID: ${{ inputs.panel_build_run_id }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+        run: |
+          set -euo pipefail
+          gh run download "$PANEL_BUILD_RUN_ID" --repo "$GITHUB_REPOSITORY" \\
+            --name "kalshi-research-panel-$SOURCE_RUN_ID" --dir panel-artifact
+          test -s panel-artifact/data/research_panel.jsonl
+      - name: Run leakage-safe walk-forward evaluation
+        run: |
+          set -euo pipefail
+          python -m engine.walk_forward \\
+            --dataset panel-artifact/data/research_panel.jsonl \\
+            --features trade_count,contract_volume,block_contract_volume,yes_vwap,no_vwap,market_count,yes_bid_contracts,yes_ask_contracts,no_bid_contracts,no_ask_contracts \\
+            --min-train-size 30 \\
+            --test-cutoffs 1 \\
+            --step-cutoffs 1 > walk-forward-report.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(Path("walk-forward-report.json").read_text())
+          aggregate = report["aggregate"]
+          model = aggregate["model_brier"]
+          midpoint = aggregate["market_midpoint_brier"]
+          neutral = aggregate["neutral_brier"]
+          if model is None or neutral is None:
+              raise SystemExit("Evaluation did not produce model and neutral Brier scores")
+          summary = {
+              "folds": len(report["folds"]),
+              "model_brier": model,
+              "neutral_brier": neutral,
+              "market_midpoint_brier": midpoint,
+              "model_brier_skill_vs_neutral": (
+                  1 - model["brier"] / neutral["brier"] if neutral["brier"] else None
+              ),
+              "model_brier_skill_vs_market_midpoint": (
+                  1 - model["brier"] / midpoint["brier"]
+                  if midpoint and midpoint["brier"] else None
+              ),
+              "paper_only": True,
+              "live_trading": False,
+              "execution_simulated": False,
+              "interpretation": (
+                  "Chronological out-of-sample diagnostics only. Repeated hourly "
+                  "observations are not independent; no live-trading claim."
+              ),
+          }
+          Path("walk-forward-summary.json").write_text(json.dumps(summary, indent=2) + "\\n")
+          print(json.dumps(summary, indent=2))
+          PY
+      - name: Upload walk-forward report
+        uses: actions/upload-artifact@v4
+        with:
+          name: kalshi-walk-forward-evaluation
+          path: |
+            walk-forward-report.json
+            walk-forward-summary.json
+          if-no-files-found: error
+          retention-days: 30

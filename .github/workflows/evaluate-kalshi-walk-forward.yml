@@ -40,18 +40,12 @@ jobs:
           SOURCE_RUN_ID: ${{ inputs.source_run_id }}
         run: |
           set -euo pipefail
-          gh run download "$PANEL_BUILD_RUN_ID" --repo "$GITHUB_REPOSITORY" \\
-            --name "kalshi-research-panel-$SOURCE_RUN_ID" --dir panel-artifact
+          gh run download "$PANEL_BUILD_RUN_ID" --repo "$GITHUB_REPOSITORY" --name "kalshi-research-panel-$SOURCE_RUN_ID" --dir panel-artifact
           test -s panel-artifact/data/research_panel.jsonl
       - name: Run leakage-safe walk-forward evaluation
         run: |
           set -euo pipefail
-          python -m engine.walk_forward \\
-            --dataset panel-artifact/data/research_panel.jsonl \\
-            --features trade_count,contract_volume,block_contract_volume,yes_vwap,no_vwap,market_count,yes_bid_contracts,yes_ask_contracts,no_bid_contracts,no_ask_contracts \\
-            --min-train-size 30 \\
-            --test-cutoffs 1 \\
-            --step-cutoffs 1 > walk-forward-report.json
+          python -m engine.walk_forward --dataset panel-artifact/data/research_panel.jsonl --features trade_count,contract_volume,block_contract_volume,yes_vwap,no_vwap,market_count,yes_bid_contracts,yes_ask_contracts,no_bid_contracts,no_ask_contracts --min-train-size 30 --test-cutoffs 1 --step-cutoffs 1 > walk-forward-report.json
           python - <<'PY'
           import json
           from pathlib import Path
@@ -83,7 +77,7 @@ jobs:
                   "observations are not independent; no live-trading claim."
               ),
           }
-          Path("walk-forward-summary.json").write_text(json.dumps(summary, indent=2) + "\\n")
+          Path("walk-forward-summary.json").write_text(json.dumps(summary, indent=2) + chr(10))
           print(json.dumps(summary, indent=2))
           PY
       - name: Upload walk-forward report

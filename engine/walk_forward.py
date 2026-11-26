@@ -42,6 +42,49 @@ def _score(probabilities: list[float], labels: list[int]) -> dict[str, float]:
     }
 
 
+def _diagnostic_summary(rows: list[dict[str, Any]], group_key: str) -> list[dict[str, Any]]:
+    """Score diagnostic slices using identical observations for model and market."""
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        value = row.get(group_key)
+        if value is None:
+            continue
+        groups.setdefault(str(value), []).append(row)
+    summaries = []
+    for group, items in sorted(groups.items()):
+        if len(items) < 20:
+            continue
+        labels = [int(item["outcome_yes"]) for item in items]
+        model = _score([float(item["model_probability"]) for item in items], labels)
+        neutral = _score([0.5] * len(items), labels)
+        market_items = [item for item in items if item.get("market_yes_mid") is not None]
+        market = (
+            _score([float(item["market_yes_mid"]) for item in market_items],
+                   [int(item["outcome_yes"]) for item in market_items])
+            if market_items else None
+        )
+        summaries.append({
+            "group": group,
+            "model": model,
+            "neutral_50": neutral,
+            "market_midpoint": market,
+            "model_brier_skill_vs_market": (
+                1 - model["brier"] / market["brier"]
+                if market and market["brier"] > 0 else None
+            ),
+        })
+    return summaries
+
+
+def _diagnostic_band(value: float | None, edges: tuple[float, ...], labels: tuple[str, ...]) -> str | None:
+    if value is None or not math.isfinite(float(value)):
+        return None
+    for edge, label in zip(edges, labels):
+        if value < edge:
+            return label
+    return labels[-1]
+
+
 def evaluate_walk_forward(
     rows: Iterable[Mapping[str, Any]],
     feature_names: Iterable[str],
@@ -88,6 +131,7 @@ def evaluate_walk_forward(
                 raise ValueError(f"feature must be finite: {key}")
     ordered = sorted(cutoffs)
     folds = []
+    prediction_rows: list[dict[str, Any]] = []
     skipped_single_class_folds = 0
     for start in range(0, len(ordered), step):
         window = ordered[start:start + test_cutoffs]
@@ -137,6 +181,47 @@ def evaluate_walk_forward(
             "market_quote_coverage": len(market_pairs) / len(testing),
         }
         folds.append(fold)
+        for row, probability in zip(testing, model_probs):
+            market_mid = row.get("market_yes_mid")
+            bid, ask = row.get("market_yes_bid"), row.get("market_yes_ask")
+            spread = (
+                float(ask) - float(bid)
+                if bid is not None and ask is not None else None
+            )
+            confidence = abs(float(probability) - 0.5)
+            prediction_rows.append({
+                "market_ticker": row.get("market_ticker"),
+                "event_ticker": row.get("event_ticker"),
+                "forecast_at": row.get("forecast_at"),
+                "resolved_at": row.get("resolved_at"),
+                "outcome_yes": int(row["probability_label_yes"]),
+                "model_probability": float(probability),
+                "market_yes_mid": float(market_mid) if market_mid is not None else None,
+                "market_yes_bid": float(bid) if bid is not None else None,
+                "market_yes_ask": float(ask) if ask is not None else None,
+                "spread": spread,
+                "quote_age_seconds": row.get("quote_age_seconds"),
+                "feature_age_seconds": row.get("feature_age_seconds"),
+                "confidence": confidence,
+                "confidence_band": _diagnostic_band(
+                    confidence, (0.05, 0.10, 0.20),
+                    ("0.00-0.05", "0.05-0.10", "0.10-0.20", "0.20+")
+                ),
+                "spread_band": _diagnostic_band(
+                    spread, (0.02, 0.05, 0.10),
+                    ("0.00-0.02", "0.02-0.05", "0.05-0.10", "0.10+")
+                ),
+                "quote_age_band": _diagnostic_band(
+                    float(row["quote_age_seconds"]) if row.get("quote_age_seconds") is not None else None,
+                    (30, 120, 300),
+                    ("0-30s", "30-120s", "120-300s", "300s+")
+                ),
+                "feature_age_band": _diagnostic_band(
+                    float(row["feature_age_seconds"]) if row.get("feature_age_seconds") is not None else None,
+                    (3600, 21600, 86400),
+                    ("0-1h", "1-6h", "6-24h", "24h+")
+                ),
+            })
     if not folds:
         raise ValueError(
             "no valid folds: add more forecast cutoffs and matured training outcomes"
@@ -165,6 +250,20 @@ def evaluate_walk_forward(
         "paper_only": True,
         "live_trading": False,
         "execution_simulated": False,
+        "diagnostics": {
+            "by_event": _diagnostic_summary(prediction_rows, "event_ticker"),
+            "by_model_confidence": _diagnostic_summary(prediction_rows, "confidence_band"),
+            "by_market_spread": _diagnostic_summary(prediction_rows, "spread_band"),
+            "by_quote_age": _diagnostic_summary(prediction_rows, "quote_age_band"),
+            "by_feature_age": _diagnostic_summary(prediction_rows, "feature_age_band"),
+            "minimum_group_observations": 20,
+            "note": (
+                "Groups with fewer than 20 observations are omitted. "
+                "Repeated market/cutoff observations are not independent. "
+                "These are diagnostic slices, not proof of tradable edge."
+            ),
+        },
+        "prediction_rows": prediction_rows,
     }
 
 

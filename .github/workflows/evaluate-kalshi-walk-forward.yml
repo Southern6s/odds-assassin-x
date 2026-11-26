@@ -70,6 +70,8 @@ jobs:
                   1 - model["brier"] / midpoint["brier"]
                   if midpoint and midpoint["brier"] else None
               ),
+              "diagnostics": report.get("diagnostics", {}),
+              "prediction_rows": len(report.get("prediction_rows", [])),
               "paper_only": True,
               "live_trading": False,
               "execution_simulated": False,

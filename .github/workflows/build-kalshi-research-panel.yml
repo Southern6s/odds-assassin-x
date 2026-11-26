@@ -42,7 +42,7 @@ jobs:
         run: |
           set -euo pipefail
           gh run download "$SOURCE_RUN_ID" --repo "$GITHUB_REPOSITORY" \
-            --name "kalshi-research-$SOURCE_RUN_ID" --dir source-data
+            --name "kalshi-expanded-research-$SOURCE_RUN_ID" --dir source-data
           test -s source-data/ordinary_binary/market_snapshots.jsonl
           test -s source-data/ordinary_binary/trade_snapshots.jsonl
           test -s source-data/ordinary_binary/candlestick_snapshots.jsonl

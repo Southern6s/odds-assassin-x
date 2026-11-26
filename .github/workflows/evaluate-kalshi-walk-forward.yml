@@ -42,11 +42,11 @@ jobs:
           repository: ${{ github.repository }}
           run-id: ${{ inputs.panel_build_run_id }}
       - name: Verify panel file
-        run: test -s panel-artifact/data/research_panel.jsonl
+        run: test -s panel-artifact/research_panel.jsonl
       - name: Run leakage-safe walk-forward evaluation
         run: |
           set -euo pipefail
-          python -m engine.walk_forward --dataset panel-artifact/data/research_panel.jsonl --features trade_count,contract_volume,block_contract_volume,yes_vwap,no_vwap,market_count,yes_bid_contracts,yes_ask_contracts,no_bid_contracts,no_ask_contracts --min-train-size 30 --test-cutoffs 1 --step-cutoffs 1 > walk-forward-report.json
+          python -m engine.walk_forward --dataset panel-artifact/research_panel.jsonl --features trade_count,contract_volume,block_contract_volume,yes_vwap,no_vwap,market_count,yes_bid_contracts,yes_ask_contracts,no_bid_contracts,no_ask_contracts --min-train-size 30 --test-cutoffs 1 --step-cutoffs 1 > walk-forward-report.json
           python - <<'PY'
           import json
           from pathlib import Path

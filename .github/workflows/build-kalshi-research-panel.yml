@@ -105,7 +105,7 @@ jobs:
 
           start = datetime.fromisoformat(os.environ["FORECAST_START"])
           end = datetime.fromisoformat(os.environ["FORECAST_END"])
-          trade_start = start - timedelta(hours=24)
+          trade_start = start - timedelta(hours=25)  # 24h feature age plus one full bucket
           candle_start_ts = int(start.timestamp()) - 300
           end_ts = int(end.timestamp())
           base = Path("source-data/ordinary_binary")

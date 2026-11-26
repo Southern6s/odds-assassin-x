@@ -35,6 +35,11 @@ class WalkForwardTests(unittest.TestCase):
         self.assertEqual(first["market_midpoint"]["observations"], 20)
         self.assertFalse(report["live_trading"])
         self.assertFalse(report["execution_simulated"])
+        self.assertEqual(len(report["prediction_rows"]), sum(
+            fold["model"]["observations"] for fold in report["folds"]
+        ))
+        self.assertIn("by_model_confidence", report["diagnostics"])
+        self.assertIn("by_market_spread", report["diagnostics"])
 
     def test_skips_single_class_training_windows_until_both_labels_mature(self):
         base = datetime(2026, 1, 1, tzinfo=timezone.utc)
@@ -83,6 +88,36 @@ class WalkForwardTests(unittest.TestCase):
             )
         with self.assertRaises(ValueError):
             evaluate_walk_forward(self.rows, [], min_train_size=10)
+
+    def test_diagnostics_group_predictions_by_event_and_confidence(self):
+        base = datetime(2026, 2, 1, tzinfo=timezone.utc)
+        rows = []
+        for day in range(5):
+            cutoff = base + timedelta(days=day)
+            for index in range(20):
+                label = int(index % 2 == 0)
+                rows.append({
+                    "market_ticker": f"EVENT-{day}-{index}",
+                    "event_ticker": "EVENT-A",
+                    "forecast_at": cutoff.isoformat(),
+                    "resolved_at": (cutoff + timedelta(hours=12)).isoformat(),
+                    "probability_label_yes": label,
+                    "feature_signal": 1.0 if label else -1.0,
+                    "market_yes_mid": 0.5,
+                    "market_yes_bid": 0.48,
+                    "market_yes_ask": 0.52,
+                    "quote_age_seconds": 10.0,
+                    "feature_age_seconds": 600.0,
+                })
+        report = evaluate_walk_forward(
+            rows, ["signal"], min_train_size=20, test_cutoffs=1
+        )
+        self.assertTrue(report["prediction_rows"])
+        self.assertEqual(report["diagnostics"]["minimum_group_observations"], 20)
+        self.assertEqual(report["diagnostics"]["by_event"][0]["group"], "EVENT-A")
+        self.assertGreaterEqual(
+            report["diagnostics"]["by_event"][0]["model"]["observations"], 20
+        )
 
 
 if __name__ == "__main__":

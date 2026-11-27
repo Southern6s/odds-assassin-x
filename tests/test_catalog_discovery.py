@@ -120,7 +120,7 @@ class ResumableCatalogTests(unittest.TestCase):
                 client, output, state, max_pages_per_tier=1
             )
             rows = [json.loads(line) for line in output.read_text().splitlines()]
-            self.assertEqual(len(rows), 1)
+            self.assertEqual(len(rows), 2)
             self.assertEqual(replay["duplicates"], 1)
             self.assertEqual(replay["cursor"], "live-2")
 

@@ -105,7 +105,7 @@ def collect_depth_snapshots(client: Any, output_path: str | Path, *,
                 try:
                     payload = client.get_market_orderbook(ticker)
                     record = normalize_orderbook(payload, ticker, captured)
-                    handle.write(json.dumps(record, separators=(",", ":"), sort_keys=True) + "\\n")
+                    handle.write(json.dumps(record, separators=(",", ":"), sort_keys=True) + "\n")
                     written += 1
                 except (TypeError, ValueError, RuntimeError) as exc:
                     failures += 1

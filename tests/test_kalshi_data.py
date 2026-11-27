@@ -16,6 +16,9 @@ class KalshiDataTests(unittest.TestCase):
             "yes_ask": 48,
             "no_bid": 51,
             "no_ask_dollars": "0.53",
+            "yes_bid_size_fp": "12.5",
+            "yes_ask_size_fp": "7",
+            "no_bid_size_fp": "3",
         }
         result = normalize_market(market)
         self.assertEqual(result["series_ticker"], "SERIES-1")
@@ -23,6 +26,10 @@ class KalshiDataTests(unittest.TestCase):
         self.assertAlmostEqual(result["yes_ask"], 0.48)
         self.assertAlmostEqual(result["no_bid"], 0.51)
         self.assertAlmostEqual(result["no_ask"], 0.53)
+        self.assertAlmostEqual(result["yes_bid_size"], 12.5)
+        self.assertAlmostEqual(result["yes_ask_size"], 7)
+        self.assertAlmostEqual(result["no_bid_size"], 3)
+        self.assertIsNone(result["no_ask_size"])
 
     def test_retains_settlement_metadata_for_binary_labels(self):
         result = normalize_market({

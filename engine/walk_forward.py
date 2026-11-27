@@ -224,6 +224,16 @@ def evaluate_walk_forward(
                 "market_yes_mid": float(market_mid) if market_mid is not None else None,
                 "market_yes_bid": float(bid) if bid is not None else None,
                 "market_yes_ask": float(ask) if ask is not None else None,
+                "market_no_bid": (
+                    float(row["market_no_bid"]) if row.get("market_no_bid") is not None else None
+                ),
+                "market_no_ask": (
+                    float(row["market_no_ask"]) if row.get("market_no_ask") is not None else None
+                ),
+                "market_yes_bid_size": row.get("market_yes_bid_size"),
+                "market_yes_ask_size": row.get("market_yes_ask_size"),
+                "market_no_bid_size": row.get("market_no_bid_size"),
+                "market_no_ask_size": row.get("market_no_ask_size"),
                 "spread": spread,
                 "quote_age_seconds": row.get("quote_age_seconds"),
                 "feature_age_seconds": row.get("feature_age_seconds"),

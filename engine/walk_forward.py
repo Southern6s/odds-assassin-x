@@ -118,6 +118,30 @@ def evaluate_walk_forward(
         raise ValueError("step_cutoffs must be positive")
 
     items = list(rows)
+    if "market_midpoint" in names or "market_quote_present" in names:
+        raise ValueError("market_midpoint and market_quote_present are reserved model features")
+    # Give the model the market's contemporaneous probability as a baseline
+    # feature, plus an explicit missing-quote indicator. Missing quotes use a
+    # neutral placeholder but are distinguishable from a genuine 50% quote.
+    augmented_items = []
+    for source in items:
+        row = dict(source)
+        midpoint = row.get("market_yes_mid")
+        if midpoint is None:
+            row["feature_market_midpoint"] = 0.5
+            row["feature_market_quote_present"] = 0.0
+        else:
+            try:
+                midpoint_value = float(midpoint)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("market_yes_mid must be numeric when present") from exc
+            if not math.isfinite(midpoint_value) or not 0 <= midpoint_value <= 1:
+                raise ValueError("market_yes_mid must be between 0 and 1")
+            row["feature_market_midpoint"] = midpoint_value
+            row["feature_market_quote_present"] = 1.0
+        augmented_items.append(row)
+    items = augmented_items
+    model_names = names + ("market_midpoint", "market_quote_present")
     if not items:
         raise ValueError("at least one research row is required")
     cutoffs = set()
@@ -169,7 +193,7 @@ def evaluate_walk_forward(
         if not testing:
             continue
         model = fit_logistic_model(
-            training, names, as_of=cutoff, min_training_rows=min_train_size
+            training, model_names, as_of=cutoff, min_training_rows=min_train_size
         )
         labels = [int(row["probability_label_yes"]) for row in testing]
         model_probs = [model.predict_probability(row) for row in testing]
@@ -274,6 +298,8 @@ def evaluate_walk_forward(
 
     return {
         "folds": folds,
+        "model_features": list(model_names),
+        "market_baseline_features": ["market_midpoint", "market_quote_present"],
         "skipped_single_class_folds": skipped_single_class_folds,
         "aggregate": {
             "model_brier": aggregate("brier", "model"),

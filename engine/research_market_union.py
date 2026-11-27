@@ -50,7 +50,7 @@ def merge_settlement_window_markets(
     max_ts: int,
     max_catalog_markets: int = 300,
 ) -> tuple[list[dict[str, Any]], dict[str, int]]:
-    """Union trade markets with up to N evenly spaced resolved markets in [min,max)."""
+    """Union only resolved ordinary-binary markets inside the requested window."""
     if isinstance(min_ts, bool) or not isinstance(min_ts, int) or min_ts < 0:
         raise ValueError("min_ts must be a nonnegative integer")
     if isinstance(max_ts, bool) or not isinstance(max_ts, int) or max_ts <= min_ts:
@@ -70,12 +70,19 @@ def merge_settlement_window_markets(
         if isinstance(ticker, str) and ticker.strip():
             merged.setdefault(ticker, row)
 
+    hydrated_seen: set[str] = set()
     hydrated_tickers: set[str] = set()
     for row in hydrated_markets:
-        ticker = market_payload(row).get("ticker")
-        if isinstance(ticker, str) and ticker.strip():
+        market = market_payload(row)
+        ticker = market.get("ticker")
+        if not isinstance(ticker, str) or not ticker.strip():
+            continue
+        hydrated_seen.add(ticker)
+        settled = _unix_seconds(market.get("settlement_ts"))
+        if (is_ordinary_binary_market(row) and market.get("result") in ("yes", "no")
+                and settled is not None and min_ts <= settled < max_ts):
             hydrated_tickers.add(ticker)
-        add(row)
+            add(row)
 
     eligible: list[tuple[float, str, dict[str, Any]]] = []
     seen_catalog: set[str] = set()
@@ -109,7 +116,9 @@ def merge_settlement_window_markets(
 
     result = [merged[key] for key in sorted(merged)]
     return result, {
-        "trade_hydrated_markets": len(hydrated_tickers),
+        "trade_hydrated_markets": len(hydrated_seen),
+        "trade_hydrated_ordinary_binary_resolved_in_window": len(hydrated_tickers),
+        "trade_hydrated_markets_excluded": len(hydrated_seen - hydrated_tickers),
         "catalog_eligible_resolved_ordinary_binary_markets": len(eligible),
         "catalog_markets_selected": len(selected),
         "unique_markets_after_union": len(result),
@@ -121,7 +130,7 @@ def merge_settlement_window_markets(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Union trade-hydrated markets with a bounded resolved ordinary binary cohort"
+        description="Union a bounded resolved ordinary-binary research cohort"
     )
     parser.add_argument("--hydrated", required=True)
     parser.add_argument("--catalog", required=True)

@@ -40,7 +40,7 @@ class ResumableCatalogTests(unittest.TestCase):
             self.assertFalse(first["complete"])
             self.assertEqual(first["tier"], "markets")
             self.assertEqual(first["cursor"], "live-2")
-            self.assertEqual(len(output.read_text().splitlines()), 1)
+            self.assertEqual(len(output.read_text().splitlines()), 2)
 
             second = discover_resumable(
                 client, output, state, limit=1000, max_pages_per_tier=1

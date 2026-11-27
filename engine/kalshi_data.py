@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import json
+import math
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -31,6 +32,20 @@ def _decimal_price(market: dict[str, Any], dollars_key: str, cents_key: str) -> 
     return number
 
 
+def _displayed_size(market: dict[str, Any], side: str, book_side: str) -> float | None:
+    value = market.get(f"{side}_{book_side}_size_fp",
+                       market.get(f"{side}_{book_side}_size"))
+    if value is None:
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"invalid displayed size: {side}_{book_side}_size") from exc
+    if not math.isfinite(number) or number < 0:
+        raise ValueError(f"displayed size must be finite and nonnegative: {side}_{book_side}_size")
+    return number
+
+
 def normalize_market(market: dict[str, Any]) -> dict[str, Any]:
     """Normalize one Kalshi market without manufacturing missing quote values."""
     ticker = market.get("ticker")
@@ -51,6 +66,10 @@ def normalize_market(market: dict[str, Any]) -> dict[str, Any]:
         "yes_ask": _decimal_price(market, "yes_ask_dollars", "yes_ask"),
         "no_bid": _decimal_price(market, "no_bid_dollars", "no_bid"),
         "no_ask": _decimal_price(market, "no_ask_dollars", "no_ask"),
+        "yes_bid_size": _displayed_size(market, "yes", "bid"),
+        "yes_ask_size": _displayed_size(market, "yes", "ask"),
+        "no_bid_size": _displayed_size(market, "no", "bid"),
+        "no_ask_size": _displayed_size(market, "no", "ask"),
         "volume": market.get("volume_fp", market.get("volume")),
         "volume_24h": market.get("volume_24h_fp", market.get("volume_24h")),
         "open_interest": market.get("open_interest_fp", market.get("open_interest")),

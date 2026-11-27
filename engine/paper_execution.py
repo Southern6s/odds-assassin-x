@@ -61,9 +61,7 @@ def _size(row: Mapping[str, Any], key: str) -> int:
     if value is None:
         return 0
     number = _number(value, key, minimum=0)
-    if not number.is_integer():
-        raise ValueError(f"{key} must be a whole number of contracts")
-    return int(number)
+    return math.floor(number)
 
 
 def _quote(row: Mapping[str, Any], side: str, book_side: str) -> tuple[float | None, int]:
@@ -94,8 +92,8 @@ def simulate_paper_execution(
         _number(getattr(config, name), name, minimum=0)
     if config.max_trade_risk <= 0 or config.max_portfolio_risk <= 0:
         raise ValueError("trade and portfolio risk caps must be positive")
-    if config.max_contracts < 1:
-        raise ValueError("max_contracts must be positive")
+    if isinstance(config.max_contracts, bool) or not isinstance(config.max_contracts, int) or config.max_contracts < 1:
+        raise ValueError("max_contracts must be a positive integer")
 
     rows = list(prediction_rows)
     if not rows:

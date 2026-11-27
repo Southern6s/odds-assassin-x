@@ -74,7 +74,7 @@ def evaluate_bayesian_walk_forward(
                 if not math.isfinite(p) or not 0 <= p <= 1:
                     raise ValueError("market_yes_mid must be between 0 and 1")
                 bucket = _bucket(p, bucket_width)
-                yes, no = counts.get(bucket, [0, 0])
+                no, yes = counts.get(bucket, [0, 0])
                 prior_mean = min(max((bucket + 0.5) * bucket_width, 0.001), 0.999)
                 probability = (prior_strength * prior_mean + yes) / (prior_strength + yes + no)
             prediction = {

@@ -63,14 +63,26 @@ def _diagnostic_summary(rows: list[dict[str, Any]], group_key: str) -> list[dict
                    [int(item["outcome_yes"]) for item in market_items])
             if market_items else None
         )
+        model_matched = (
+            _score([float(item["model_probability"]) for item in market_items],
+                   [int(item["outcome_yes"]) for item in market_items])
+            if market_items else None
+        )
+        neutral_matched = (
+            _score([0.5] * len(market_items),
+                   [int(item["outcome_yes"]) for item in market_items])
+            if market_items else None
+        )
         summaries.append({
             "group": group,
             "model": model,
             "neutral_50": neutral,
+            "model_market_matched": model_matched,
+            "neutral_market_matched": neutral_matched,
             "market_midpoint": market,
             "model_brier_skill_vs_market": (
-                1 - model["brier"] / market["brier"]
-                if market and market["brier"] > 0 else None
+                1 - model_matched["brier"] / market["brier"]
+                if model_matched and market and market["brier"] > 0 else None
             ),
         })
     return summaries
@@ -174,6 +186,19 @@ def evaluate_walk_forward(
             "training_yes_rate": model.training_yes_rate,
             "model": _score(model_probs, labels),
             "neutral_50": _score(neutral_probs, labels),
+            "model_market_matched": (
+                _score(
+                    [probability for row, probability in zip(testing, model_probs)
+                     if row.get("market_yes_mid") is not None],
+                    [label for row, label in zip(testing, labels)
+                     if row.get("market_yes_mid") is not None],
+                )
+                if market_pairs else None
+            ),
+            "neutral_market_matched": (
+                _score([0.5] * len(market_pairs), [y for _, y in market_pairs])
+                if market_pairs else None
+            ),
             "market_midpoint": (
                 _score([p for p, _ in market_pairs], [y for _, y in market_pairs])
                 if market_pairs else None
@@ -243,8 +268,11 @@ def evaluate_walk_forward(
         "aggregate": {
             "model_brier": aggregate("brier", "model"),
             "neutral_brier": aggregate("brier", "neutral_50"),
+            "model_market_matched_brier": aggregate("brier", "model_market_matched"),
+            "neutral_market_matched_brier": aggregate("brier", "neutral_market_matched"),
             "market_midpoint_brier": aggregate("brier", "market_midpoint"),
             "model_logloss": aggregate("logloss", "model"),
+            "model_market_matched_logloss": aggregate("logloss", "model_market_matched"),
             "market_midpoint_logloss": aggregate("logloss", "market_midpoint"),
         },
         "paper_only": True,

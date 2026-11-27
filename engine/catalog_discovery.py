@@ -9,7 +9,12 @@ from pathlib import Path
 import tempfile
 from typing import Any
 
-from .kalshi_client import KalshiPublicClient, series_category_map, enrich_market_category
+from .kalshi_client import (
+    KalshiPublicClient,
+    enrich_market_category,
+    enrich_market_series,
+    series_category_map,
+)
 from .kalshi_data import append_jsonl, snapshot_record
 
 TIERS = ("markets", "historical/markets")
@@ -90,7 +95,8 @@ def discover_resumable(
         _atomic_json(state_file, state)
 
     seen = _load_seen_tickers(output)
-    categories = series_category_map(client.get_series())
+    series_records = client.get_series()
+    categories = series_category_map(series_records)
     pages_this_run = {tier: 0 for tier in TIERS}
     started = datetime.now(timezone.utc)
 
@@ -109,7 +115,11 @@ def discover_resumable(
         page_duplicates = 0
         for raw_market in page:
             state["scanned"] += 1
-            market = enrich_market_category(raw_market, categories)
+            # Market-list payloads can omit series_ticker. Resolve it from the
+            # authoritative event-ticker prefix before applying the category map.
+            market = enrich_market_category(
+                enrich_market_series(raw_market, series_records), categories
+            )
             ticker = market.get("ticker")
             if isinstance(ticker, str) and ticker:
                 if ticker in seen:

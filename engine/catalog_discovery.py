@@ -141,73 +141,73 @@ def discover_resumable(
         for tier in TIERS:
             if state["tier_complete"][tier] or pages_this_run[tier] >= max_pages_per_tier:
                 continue
-        # The live market catalog defaults toward active listings. Explicitly
-        # request settled markets so the resolved cohort is not drowned out by
-        # currently open contracts. The historical tier contains archived
-        # settled markets and does not accept a status filter.
-        page, next_cursor = client.get_market_page(
-            tier,
-            cursor=state["cursors"][tier],
-            limit=limit,
-            status="settled" if tier == "markets" else None,
-            mve_filter="exclude",
-        )
-        # Each page gets its own capture time. The checkpoint captured_at
-        # remains the discovery session start, not a timestamp for later pages.
-        timestamp = datetime.now(timezone.utc)
-        records = []
-        page_rejected = 0
-        page_duplicates = 0
-        page_outside_window = 0
-        for raw_market in page:
-            state["scanned"] += 1
-            # Market-list payloads can omit series_ticker. Resolve it from the
-            # authoritative event-ticker prefix before applying the category map.
-            market = enrich_market_category(
-                enrich_market_series(raw_market, series_records), categories
+            # The live market catalog defaults toward active listings. Explicitly
+            # request settled markets so the resolved cohort is not drowned out by
+            # currently open contracts. The historical tier contains archived
+            # settled markets and does not accept a status filter.
+            page, next_cursor = client.get_market_page(
+                tier,
+                cursor=state["cursors"][tier],
+                limit=limit,
+                status="settled" if tier == "markets" else None,
+                mve_filter="exclude",
             )
-            ticker = market.get("ticker")
-            if window is not None:
-                settled_ts = _unix_seconds(market.get("settlement_ts"))
-                if settled_ts is None or not min_ts <= settled_ts < max_ts:
-                    page_outside_window += 1
+            # Each page gets its own capture time. The checkpoint captured_at
+            # remains the discovery session start, not a timestamp for later pages.
+            timestamp = datetime.now(timezone.utc)
+            records = []
+            page_rejected = 0
+            page_duplicates = 0
+            page_outside_window = 0
+            for raw_market in page:
+                state["scanned"] += 1
+                # Market-list payloads can omit series_ticker. Resolve it from the
+                # authoritative event-ticker prefix before applying the category map.
+                market = enrich_market_category(
+                    enrich_market_series(raw_market, series_records), categories
+                )
+                ticker = market.get("ticker")
+                if window is not None:
+                    settled_ts = _unix_seconds(market.get("settlement_ts"))
+                    if settled_ts is None or not min_ts <= settled_ts < max_ts:
+                        page_outside_window += 1
+                        continue
+                if isinstance(ticker, str) and ticker:
+                    if ticker in seen:
+                        page_duplicates += 1
+                        continue
+                try:
+                    record = snapshot_record(market, timestamp)
+                except (TypeError, ValueError):
+                    page_rejected += 1
                     continue
-            if isinstance(ticker, str) and ticker:
-                if ticker in seen:
-                    page_duplicates += 1
-                    continue
-            try:
-                record = snapshot_record(market, timestamp)
-            except (TypeError, ValueError):
-                page_rejected += 1
-                continue
-            if isinstance(ticker, str) and ticker:
-                seen.add(ticker)
-            records.append(record)
+                if isinstance(ticker, str) and ticker:
+                    seen.add(ticker)
+                records.append(record)
 
-        # Do not move the cursor until the entire page append has returned.
-        written = append_jsonl(records, output)
-        state["written"] += written
-        state["rejected"] += page_rejected
-        state["outside_window"] += page_outside_window
-        state["duplicates"] += page_duplicates
-        state["pages_completed"][tier] += 1
-        pages_this_run[tier] += 1
-        if next_cursor is None:
-            state["tier_complete"][tier] = True
-            state["cursors"][tier] = None
-        else:
-            state["cursors"][tier] = next_cursor
-        _atomic_json(state_file, state)
-        elapsed = (datetime.now(timezone.utc) - started).total_seconds()
-        print(
-            f"Catalog checkpoint: tier={tier}, page={state['pages_completed'][tier]}, "
-            f"page_markets={len(page)}, total_scanned={state['scanned']}, "
-            f"total_written={state['written']}, outside_window={state['outside_window']}, "
-            f"duplicates={state['duplicates']}, "
-            f"elapsed_seconds={int(elapsed)}",
-            flush=True,
-        )
+            # Do not move the cursor until the entire page append has returned.
+            written = append_jsonl(records, output)
+            state["written"] += written
+            state["rejected"] += page_rejected
+            state["outside_window"] += page_outside_window
+            state["duplicates"] += page_duplicates
+            state["pages_completed"][tier] += 1
+            pages_this_run[tier] += 1
+            if next_cursor is None:
+                state["tier_complete"][tier] = True
+                state["cursors"][tier] = None
+            else:
+                state["cursors"][tier] = next_cursor
+            _atomic_json(state_file, state)
+            elapsed = (datetime.now(timezone.utc) - started).total_seconds()
+            print(
+                f"Catalog checkpoint: tier={tier}, page={state['pages_completed'][tier]}, "
+                f"page_markets={len(page)}, total_scanned={state['scanned']}, "
+                f"total_written={state['written']}, outside_window={state['outside_window']}, "
+                f"duplicates={state['duplicates']}, "
+                f"elapsed_seconds={int(elapsed)}",
+                flush=True,
+            )
 
     result = dict(state)
     result["complete"] = all(state["tier_complete"].values())

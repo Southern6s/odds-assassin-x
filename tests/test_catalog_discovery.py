@@ -55,7 +55,7 @@ class ResumableCatalogTests(unittest.TestCase):
                 [row["market"]["ticker"] for row in rows], ["C", "A", "B"]
             )
             self.assertEqual([call[1] for call in client.calls], [
-                None, "live-2", None
+                None, None, "live-2"
             ])
             self.assertEqual([call[3:] for call in client.calls], [
                 (None, "exclude"),

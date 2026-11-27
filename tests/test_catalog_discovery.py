@@ -50,16 +50,17 @@ class ResumableCatalogTests(unittest.TestCase):
                 "markets": 2, "historical/markets": 1
             })
             rows = [json.loads(line) for line in output.read_text().splitlines()]
+            # Archive-first discovery intentionally writes C before live A/B.
             self.assertEqual(
-                [row["market"]["ticker"] for row in rows], ["A", "B", "C"]
+                [row["market"]["ticker"] for row in rows], ["C", "A", "B"]
             )
             self.assertEqual([call[1] for call in client.calls], [
                 None, "live-2", None
             ])
             self.assertEqual([call[3:] for call in client.calls], [
-                ("settled", "exclude"),
-                ("settled", "exclude"),
                 (None, "exclude"),
+                ("settled", "exclude"),
+                ("settled", "exclude"),
             ])
 
     def test_catalog_market_without_series_ticker_gets_authoritative_category(self):

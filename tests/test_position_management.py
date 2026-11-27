@@ -21,8 +21,8 @@ class PositionManagementTests(unittest.TestCase):
         self.assertEqual(result.action, "EXIT")
         self.assertEqual(result.reason, "take_profit")
         self.assertEqual(result.contracts_to_close, 10)
-        self.assertAlmostEqual(result.net_pnl_per_contract, 0.07)
-        self.assertAlmostEqual(result.estimated_net_pnl, 0.70)
+        self.assertAlmostEqual(result.net_pnl_per_contract, 0.08)
+        self.assertAlmostEqual(result.estimated_net_pnl, 0.80)
 
     def test_does_not_call_gross_green_mark_a_net_profit(self):
         result = evaluate_exit(

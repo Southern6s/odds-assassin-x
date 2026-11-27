@@ -104,11 +104,12 @@ def evaluate_walk_forward(
     min_train_size: int = 100,
     test_cutoffs: int = 1,
     step_cutoffs: int | None = None,
+    include_market_features: bool = True,
 ) -> dict[str, Any]:
     """Evaluate by distinct forecast cutoffs, fitting once per test window."""
     names = tuple(feature_names)
-    if not names or len(set(names)) != len(names):
-        raise ValueError("feature_names must be non-empty and unique")
+    if (not names and not include_market_features) or len(set(names)) != len(names):
+        raise ValueError("feature_names must be unique and at least one model feature is required")
     if isinstance(min_train_size, bool) or min_train_size < 2:
         raise ValueError("min_train_size must be at least 2")
     if isinstance(test_cutoffs, bool) or test_cutoffs < 1:
@@ -120,6 +121,8 @@ def evaluate_walk_forward(
     items = list(rows)
     if "market_midpoint" in names or "market_quote_present" in names:
         raise ValueError("market_midpoint and market_quote_present are reserved model features")
+    if not isinstance(include_market_features, bool):
+        raise ValueError("include_market_features must be boolean")
     # Give the model the market's contemporaneous probability as a baseline
     # feature, plus an explicit missing-quote indicator. Missing quotes use a
     # neutral placeholder but are distinguishable from a genuine 50% quote.
@@ -141,7 +144,7 @@ def evaluate_walk_forward(
             row["feature_market_quote_present"] = 1.0
         augmented_items.append(row)
     items = augmented_items
-    model_names = names + ("market_midpoint", "market_quote_present")
+    model_names = names + (("market_midpoint", "market_quote_present") if include_market_features else ())
     if not items:
         raise ValueError("at least one research row is required")
     cutoffs = set()
@@ -299,7 +302,7 @@ def evaluate_walk_forward(
     return {
         "folds": folds,
         "model_features": list(model_names),
-        "market_baseline_features": ["market_midpoint", "market_quote_present"],
+        "market_baseline_features": (["market_midpoint", "market_quote_present"] if include_market_features else []),
         "skipped_single_class_folds": skipped_single_class_folds,
         "aggregate": {
             "model_brier": aggregate("brier", "model"),

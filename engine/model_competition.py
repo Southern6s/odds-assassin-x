@@ -5,6 +5,9 @@ settled-label cutoff. This is a research leaderboard, not a trade selector.
 """
 from __future__ import annotations
 
+import argparse
+import json
+from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 from .probability import brier_score, log_loss
@@ -134,3 +137,39 @@ def evaluate_model_competition(
             "not claim tradable edge or net profitability."
         ),
     }
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Compare paper-only Kalshi model candidates on chronological folds"
+    )
+    parser.add_argument("--dataset", required=True, help="Point-in-time research panel JSONL")
+    parser.add_argument("--features", required=True,
+                        help="Comma-separated numeric event/candle feature allowlist")
+    parser.add_argument("--min-train-size", type=int, default=100)
+    parser.add_argument("--test-cutoffs", type=int, default=1)
+    parser.add_argument("--step-cutoffs", type=int, default=None)
+    args = parser.parse_args(argv)
+    try:
+        rows = []
+        with Path(args.dataset).open("r", encoding="utf-8") as handle:
+            for line_number, line in enumerate(handle, 1):
+                if not line.strip():
+                    continue
+                record = json.loads(line)
+                if not isinstance(record, dict):
+                    raise ValueError(f"line {line_number} must be a JSON object")
+                rows.append(record)
+        features = [item.strip() for item in args.features.split(",") if item.strip()]
+        report = evaluate_model_competition(
+            rows, features, min_train_size=args.min_train_size,
+            test_cutoffs=args.test_cutoffs, step_cutoffs=args.step_cutoffs,
+        )
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        parser.exit(2, f"Model competition failed: {exc}\\n")
+    print(json.dumps(report, indent=2, allow_nan=False))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

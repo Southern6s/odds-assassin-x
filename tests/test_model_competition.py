@@ -15,6 +15,7 @@ class ModelCompetitionTests(unittest.TestCase):
                 rows.append({
                     "market_ticker": f"D{day}-M{index}",
                     "event_ticker": f"E{index % 3}",
+                    "category": ("Sports", "Politics", "Economics")[index % 3],
                     "forecast_at": cutoff.isoformat(),
                     "resolved_at": (cutoff + timedelta(hours=12)).isoformat(),
                     "probability_label_yes": label,
@@ -34,6 +35,8 @@ class ModelCompetitionTests(unittest.TestCase):
         self.assertEqual(report["common_out_of_sample_observations"],
                          report["market_quote_matched_observations"])
         self.assertEqual(len(report["leaderboard"]), 3)
+        self.assertEqual({item["category"] for item in report["category_leaderboard"]},
+                         {"Sports", "Politics", "Economics"})
         self.assertEqual(report["market_midpoint_baseline"]["observations"],
                          report["market_quote_matched_observations"])
         self.assertEqual(report["promotion_status"], "not_promoted_research_only")

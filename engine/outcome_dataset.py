@@ -122,6 +122,12 @@ def build_resolved_market_dataset(
             "feature_bucket_end": feature_end.isoformat(),
             "feature_age_seconds": age_seconds,
         }
+        # Preserve exchange-supplied classification metadata when available;
+        # never infer a category from ticker text or market title.
+        for metadata_key in ("category", "series_ticker"):
+            metadata_value = market.get(metadata_key)
+            if isinstance(metadata_value, str) and metadata_value.strip():
+                row[metadata_key] = metadata_value.strip()
         for key, value in feature.items():
             if key not in ("event_ticker", "bucket_start", "bucket_seconds", "diagnostics"):
                 if isinstance(value, float) and not isfinite(value):

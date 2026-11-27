@@ -20,7 +20,7 @@ from .kalshi_data import append_jsonl, snapshot_record
 # Search the archive first: it is where the requested pre-cutoff settled
 # cohort lives. The live settled tier is still scanned after the archive.
 TIERS = ("historical/markets", "markets")
-STATE_VERSION = 3
+STATE_VERSION = 4
 
 
 def _atomic_json(path: Path, value: dict[str, Any]) -> None:
@@ -104,15 +104,17 @@ def discover_resumable(
         if (state.get("version") != STATE_VERSION or state.get("limit") != limit
                 or state.get("window") != window):
             raise ValueError("Checkpoint version, page size, or settlement window mismatch; use matching settings")
-        if state.get("tier") not in (*TIERS, "complete"):
-            raise ValueError("Checkpoint contains an unknown tier")
+        if (set(state.get("cursors", {})) != set(TIERS)
+                or set(state.get("tier_complete", {})) != set(TIERS)
+                or set(state.get("pages_completed", {})) != set(TIERS)):
+            raise ValueError("Checkpoint contains invalid per-tier pagination state")
     else:
         state = {
             "version": STATE_VERSION,
             "limit": limit,
             "window": window,
-            "tier": TIERS[0],
-            "cursor": None,
+            "cursors": {tier: None for tier in TIERS},
+            "tier_complete": {tier: False for tier in TIERS},
             "pages_completed": {tier: 0 for tier in TIERS},
             "scanned": 0,
             "written": 0,
@@ -130,17 +132,22 @@ def discover_resumable(
     pages_this_run = {tier: 0 for tier in TIERS}
     started = datetime.now(timezone.utc)
 
-    while state["tier"] != "complete":
-        tier = state["tier"]
-        if pages_this_run[tier] >= max_pages_per_tier:
-            break
+    # Round-robin so each catalog tier receives its own per-run page budget.
+    while any(
+        not state["tier_complete"][tier]
+        and pages_this_run[tier] < max_pages_per_tier
+        for tier in TIERS
+    ):
+        for tier in TIERS:
+            if state["tier_complete"][tier] or pages_this_run[tier] >= max_pages_per_tier:
+                continue
         # The live market catalog defaults toward active listings. Explicitly
         # request settled markets so the resolved cohort is not drowned out by
         # currently open contracts. The historical tier contains archived
         # settled markets and does not accept a status filter.
         page, next_cursor = client.get_market_page(
             tier,
-            cursor=state["cursor"],
+            cursor=state["cursors"][tier],
             limit=limit,
             status="settled" if tier == "markets" else None,
             mve_filter="exclude",
@@ -187,14 +194,10 @@ def discover_resumable(
         state["pages_completed"][tier] += 1
         pages_this_run[tier] += 1
         if next_cursor is None:
-            if tier == TIERS[0]:
-                state["tier"] = TIERS[1]
-                state["cursor"] = None
-            else:
-                state["tier"] = "complete"
-                state["cursor"] = None
+            state["tier_complete"][tier] = True
+            state["cursors"][tier] = None
         else:
-            state["cursor"] = next_cursor
+            state["cursors"][tier] = next_cursor
         _atomic_json(state_file, state)
         elapsed = (datetime.now(timezone.utc) - started).total_seconds()
         print(
@@ -207,7 +210,7 @@ def discover_resumable(
         )
 
     result = dict(state)
-    result["complete"] = state["tier"] == "complete"
+    result["complete"] = all(state["tier_complete"].values())
     result["pages_this_run"] = pages_this_run
     return result
 

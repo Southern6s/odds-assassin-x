@@ -12,6 +12,7 @@ from typing import Any, Iterable, Mapping
 
 from .probability import brier_score, log_loss
 from .bayesian_model import evaluate_bayesian_walk_forward
+from .boosted_stumps import evaluate_boosted_stumps_walk_forward
 from .walk_forward import evaluate_walk_forward
 
 
@@ -35,7 +36,7 @@ def evaluate_model_competition(
     test_cutoffs: int = 1,
     step_cutoffs: int | None = None,
 ) -> dict[str, Any]:
-    """Compare logistic variants and a Bayesian shrinkage candidate on common folds.
+    """Compare logistic, Bayesian, and nonlinear candidates on common folds.
 
     Candidates:
       * market_calibrated: logistic calibration of midpoint + quote presence

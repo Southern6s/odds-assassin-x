@@ -89,9 +89,9 @@ jobs:
           path: |
             data/catalog_market_snapshots.jsonl
             data/catalog_market_state.json
-          key: kalshi-catalog-settled-v3-${{ github.ref_name }}-${{ github.run_id }}
+          key: kalshi-catalog-settled-v4-${{ github.ref_name }}-${{ inputs.min_ts }}-${{ inputs.max_ts }}-${{ github.run_id }}
           restore-keys: |
-            kalshi-catalog-settled-v3-${{ github.ref_name }}-
+            kalshi-catalog-settled-v4-${{ github.ref_name }}-${{ inputs.min_ts }}-${{ inputs.max_ts }}-
       - name: Discover expanded live and historical market catalog
         run: >-
           python -m engine.catalog_discovery

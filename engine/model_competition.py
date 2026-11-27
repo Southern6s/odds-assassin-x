@@ -116,11 +116,50 @@ def evaluate_model_competition(
         )
     )
 
+    # Category slices are emitted only from explicit exchange metadata and
+    # only when there are enough quote-matched observations to be informative.
+    categories: dict[str, list[tuple[str, str]]] = {}
+    missing_category = 0
+    for key in quote_keys:
+        category = prediction_maps["combined"][key].get("category")
+        if not isinstance(category, str) or not category.strip():
+            missing_category += 1
+            continue
+        categories.setdefault(category.strip(), []).append(key)
+    category_leaderboard = []
+    for category, category_keys in sorted(categories.items()):
+        if len(category_keys) < 20:
+            continue
+        category_labels = [int(prediction_maps["combined"][key]["outcome_yes"]) for key in category_keys]
+        category_models = {}
+        for model_name, mapping in prediction_maps.items():
+            category_models[model_name] = _metrics(
+                [float(mapping[key]["model_probability"]) for key in category_keys],
+                category_labels,
+            )
+        category_market = _metrics(
+            [float(prediction_maps["combined"][key]["market_yes_mid"]) for key in category_keys],
+            category_labels,
+        )
+        category_leaderboard.append({
+            "category": category,
+            "observations": len(category_keys),
+            "models": category_models,
+            "market_midpoint_baseline": category_market,
+            "best_candidate": min(
+                category_models,
+                key=lambda name: category_models[name]["brier"],
+            ),
+        })
+
     return {
         "leaderboard": leaderboard,
         "market_midpoint_baseline": _metrics(market_probabilities, quote_labels),
         "common_out_of_sample_observations": len(ordered_keys),
         "market_quote_matched_observations": len(quote_keys),
+        "category_leaderboard": category_leaderboard,
+        "category_observations_without_metadata": missing_category,
+        "minimum_category_observations": 20,
         "candidate_models": list(reports),
         "promotion_status": "not_promoted_research_only",
         "promotion_rule": (

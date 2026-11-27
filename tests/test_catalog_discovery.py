@@ -38,8 +38,9 @@ class ResumableCatalogTests(unittest.TestCase):
                 client, output, state, limit=1000, max_pages_per_tier=1
             )
             self.assertFalse(first["complete"])
-            self.assertEqual(first["tier"], "markets")
-            self.assertEqual(first["cursor"], "live-2")
+            self.assertEqual(first["cursors"], {
+                "historical/markets": None, "markets": "live-2"
+            })
             self.assertEqual(len(output.read_text().splitlines()), 2)
 
             second = discover_resumable(
@@ -54,8 +55,9 @@ class ResumableCatalogTests(unittest.TestCase):
             self.assertEqual(
                 [row["market"]["ticker"] for row in rows], ["C", "A", "B"]
             )
-            self.assertEqual([call[1] for call in client.calls], [
-                None, None, "live-2"
+            self.assertEqual([call[0:2] for call in client.calls], [
+                ("historical/markets", None), ("markets", None),
+                ("markets", "live-2")
             ])
             self.assertEqual([call[3:] for call in client.calls], [
                 (None, "exclude"),
@@ -111,8 +113,15 @@ class ResumableCatalogTests(unittest.TestCase):
             # Simulate a crash after page rows were written but before the
             # checkpoint cursor advanced: roll the state back to its start.
             checkpoint = json.loads(state.read_text())
-            checkpoint["cursor"] = None
-            checkpoint["pages_completed"]["markets"] = 0
+            checkpoint["cursors"] = {
+                "historical/markets": None, "markets": None
+            }
+            checkpoint["pages_completed"] = {
+                "historical/markets": 0, "markets": 0
+            }
+            checkpoint["tier_complete"] = {
+                "historical/markets": False, "markets": False
+            }
             checkpoint["scanned"] = 0
             checkpoint["written"] = 0
             checkpoint["duplicates"] = 0
@@ -122,8 +131,8 @@ class ResumableCatalogTests(unittest.TestCase):
             )
             rows = [json.loads(line) for line in output.read_text().splitlines()]
             self.assertEqual(len(rows), 2)
-            self.assertEqual(replay["duplicates"], 1)
-            self.assertEqual(replay["cursor"], "live-2")
+            self.assertEqual(replay["duplicates"], 2)
+            self.assertEqual(replay["cursors"]["markets"], "live-2")
 
     def test_window_filter_keeps_only_settlements_inside_requested_range(self):
         class WindowClient(PagedClient):

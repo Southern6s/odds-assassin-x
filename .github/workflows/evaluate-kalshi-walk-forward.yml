@@ -7,7 +7,7 @@ on:
         description: "GitHub Actions run ID that built the panel artifact"
         required: true
         type: string
-        default: "45771821686"
+        default: "45982327597"
       source_run_id:
         description: "Original collection run ID used in the panel artifact name"
         required: true

@@ -54,6 +54,23 @@ class SettlementWindowMarketUnionTests(unittest.TestCase):
         self.assertEqual(len(rows), 3)
         self.assertEqual(selected, [100, 104, 109])
 
+    def test_reports_outcome_event_and_category_diversity(self):
+        catalog = []
+        for index, (outcome, category) in enumerate([
+            ("yes", "Sports"), ("no", "Sports"),
+            ("yes", "Economics"), ("no", "Economics"),
+        ]):
+            row = self.market(f"M{index}", 150, result=outcome, category=category)
+            row["market"]["event_ticker"] = f"EVENT-{index}"
+            catalog.append(row)
+        rows, report = merge_settlement_window_markets(
+            [], catalog, min_ts=100, max_ts=200
+        )
+        self.assertEqual(len(rows), 4)
+        self.assertEqual(report["outcome_counts"], {"yes": 2, "no": 2})
+        self.assertEqual(report["unique_events"], 4)
+        self.assertEqual(report["category_counts"], {"Economics": 2, "Sports": 2})
+
     def test_rejects_invalid_window_and_cap(self):
         with self.assertRaises(ValueError):
             merge_settlement_window_markets([], [], min_ts=10, max_ts=10)

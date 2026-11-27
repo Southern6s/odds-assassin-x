@@ -109,6 +109,18 @@ def evaluate_model_competition(
             "fold_count": len(reports[model_name]["folds"]),
             "model_features": reports[model_name]["model_features"],
         })
+    market_baseline_metrics = _metrics(market_probabilities, quote_labels)
+    for item in leaderboard:
+        candidate_brier = item["market_quote_matched"]["brier"]
+        baseline_brier = market_baseline_metrics["brier"]
+        item["brier_skill_vs_market"] = (
+            1.0 - candidate_brier / baseline_brier
+            if candidate_brier is not None and baseline_brier not in (None, 0.0) else None
+        )
+        item["beats_market_midpoint_brier"] = (
+            candidate_brier < baseline_brier
+            if candidate_brier is not None and baseline_brier is not None else False
+        )
     leaderboard.sort(
         key=lambda item: (
             item["market_quote_matched"]["brier"]
@@ -141,6 +153,15 @@ def evaluate_model_competition(
             [float(prediction_maps["combined"][key]["market_yes_mid"]) for key in category_keys],
             category_labels,
         )
+        for metrics in category_models.values():
+            metrics["brier_skill_vs_market"] = (
+                1.0 - metrics["brier"] / category_market["brier"]
+                if category_market["brier"] not in (None, 0.0) else None
+            )
+            metrics["beats_market_midpoint_brier"] = (
+                metrics["brier"] < category_market["brier"]
+                if category_market["brier"] is not None else False
+            )
         category_leaderboard.append({
             "category": category,
             "observations": len(category_keys),
@@ -154,7 +175,7 @@ def evaluate_model_competition(
 
     return {
         "leaderboard": leaderboard,
-        "market_midpoint_baseline": _metrics(market_probabilities, quote_labels),
+        "market_midpoint_baseline": market_baseline_metrics,
         "common_out_of_sample_observations": len(ordered_keys),
         "market_quote_matched_observations": len(quote_keys),
         "category_leaderboard": category_leaderboard,

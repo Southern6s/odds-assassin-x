@@ -105,11 +105,16 @@ def evaluate_walk_forward(
     test_cutoffs: int = 1,
     step_cutoffs: int | None = None,
     include_market_features: bool = True,
+    allow_empty_event_features: bool = False,
 ) -> dict[str, Any]:
     """Evaluate by distinct forecast cutoffs, fitting once per test window."""
     names = tuple(feature_names)
-    if (not names and not include_market_features) or len(set(names)) != len(names):
-        raise ValueError("feature_names must be unique and at least one model feature is required")
+    if len(set(names)) != len(names):
+        raise ValueError("feature_names must be unique")
+    if not names and not allow_empty_event_features:
+        raise ValueError("feature_names must be non-empty")
+    if not isinstance(allow_empty_event_features, bool):
+        raise ValueError("allow_empty_event_features must be boolean")
     if isinstance(min_train_size, bool) or min_train_size < 2:
         raise ValueError("min_train_size must be at least 2")
     if isinstance(test_cutoffs, bool) or test_cutoffs < 1:

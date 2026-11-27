@@ -65,6 +65,29 @@ class WalkForwardTests(unittest.TestCase):
         self.assertEqual(report["folds"][0]["training_rows"], 4)
         self.assertEqual(report["folds"][0]["training_yes_rate"], 0.25)
 
+    def test_market_comparison_uses_identical_quote_covered_observations(self):
+        rows = [dict(row) for row in self.rows]
+        # Make half of the test observations unquoted while keeping all model
+        # predictions eligible for the full-sample score.
+        for row in rows:
+            if row["forecast_at"].startswith("2026-01-04") and int(row["market_ticker"].split("M")[1]) % 2:
+                row["market_yes_mid"] = None
+
+        report = evaluate_walk_forward(
+            rows, ["yes_bid_contracts", "no_bid_contracts"],
+            min_train_size=30, test_cutoffs=1,
+        )
+        fold = next(item for item in report["folds"]
+                    if item["test_start"].startswith("2026-01-04"))
+        self.assertEqual(fold["model"]["observations"], 20)
+        self.assertEqual(fold["market_midpoint"]["observations"], 10)
+        self.assertEqual(fold["model_market_matched"]["observations"], 10)
+        self.assertEqual(fold["neutral_market_matched"]["observations"], 10)
+        self.assertEqual(
+            report["aggregate"]["model_market_matched_brier"]["observations"],
+            report["aggregate"]["market_midpoint_brier"]["observations"],
+        )
+
     def test_rejects_missing_features_and_no_valid_folds(self):
         broken = [dict(row) for row in self.rows]
         broken[0].pop("feature_yes_bid_contracts")

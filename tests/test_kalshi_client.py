@@ -41,6 +41,16 @@ class KalshiClientTests(unittest.TestCase):
         self.assertEqual(opener.call_count, 2)
         self.assertIn("cursor=page-2", opener.call_args_list[1].args[0].full_url)
 
+    def test_get_market_orderbook_uses_public_read_only_endpoint(self):
+        client, opener = self.client_with_pages([
+            {"orderbook": {"yes": [[45, 3]], "no": [[50, 4]]}},
+        ])
+        result = client.get_market_orderbook("KXTEST-26NOV27")
+        self.assertIn("orderbook", result)
+        self.assertTrue(opener.call_args.args[0].full_url.endswith(
+            "/markets/KXTEST-26NOV27/orderbook"
+        ))
+
     def test_get_market_page_passes_live_status_filter(self):
         client, opener = self.client_with_pages([
             {"markets": [{"ticker": "OPEN"}], "cursor": ""},

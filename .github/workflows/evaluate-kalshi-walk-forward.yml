@@ -55,7 +55,10 @@ jobs:
           repository: ${{ github.repository }}
           run-id: ${{ inputs.depth_run_id }}
       - name: Verify panel and depth files
-        run: test -s panel-artifact/research_panel.jsonl
+        run: |
+          set -euo pipefail
+          test -s panel-artifact/research_panel.jsonl
+          test -s depth-artifact/orderbook_snapshots.jsonl
       - name: Run leakage-safe walk-forward evaluation
         run: |
           set -euo pipefail

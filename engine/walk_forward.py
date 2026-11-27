@@ -249,6 +249,8 @@ def evaluate_walk_forward(
             prediction_rows.append({
                 "market_ticker": row.get("market_ticker"),
                 "event_ticker": row.get("event_ticker"),
+                "category": row.get("category"),
+                "series_ticker": row.get("series_ticker"),
                 "forecast_at": row.get("forecast_at"),
                 "resolved_at": row.get("resolved_at"),
                 "outcome_yes": int(row["probability_label_yes"]),

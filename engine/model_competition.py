@@ -44,10 +44,10 @@ def evaluate_model_competition(
     """
     items = list(rows)
     names = tuple(event_feature_names)
-    if not items:
-        raise ValueError("at least one research row is required")
     if not names or len(set(names)) != len(names):
         raise ValueError("event_feature_names must be non-empty and unique")
+    if not items:
+        raise ValueError("at least one research row is required")
 
     common = {
         "min_train_size": min_train_size,
@@ -56,7 +56,8 @@ def evaluate_model_competition(
     }
     reports = {
         "market_calibrated": evaluate_walk_forward(
-            items, (), include_market_features=True, **common
+            items, (), include_market_features=True,
+            allow_empty_event_features=True, **common
         ),
         "event_only": evaluate_walk_forward(
             items, names, include_market_features=False, **common

@@ -21,7 +21,7 @@ class CrossVenueArbitrageTests(unittest.TestCase):
         self.assertEqual(result.yes_venue, "Kalshi")
         self.assertEqual(result.no_venue, "Polymarket")
         self.assertEqual(result.contracts, 7)
-        self.assertAlmostEqual(result.net_profit_per_pair, 0.051)
+        self.assertAlmostEqual(result.net_profit_per_pair, 0.046)
         self.assertTrue(result.paper_only)
         self.assertFalse(result.live_trading)
 

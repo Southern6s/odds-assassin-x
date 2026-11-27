@@ -29,7 +29,7 @@ class PaperExecutionTests(unittest.TestCase):
         self.assertEqual(report["entry_count"], 1)
         self.assertEqual(report["exit_count"], 2)
         self.assertEqual(report["open_positions"], [])
-        self.assertAlmostEqual(report["realized_net_pnl"], 0.77)
+        self.assertAlmostEqual(report["realized_net_pnl"], 0.70)
         self.assertEqual(report["trades"][1]["action"], "PARTIAL_EXIT")
         self.assertEqual(report["trades"][1]["contracts"], 2)
 

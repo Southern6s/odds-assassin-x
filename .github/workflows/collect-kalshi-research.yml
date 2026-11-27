@@ -45,8 +45,8 @@ jobs:
         id: window
         shell: bash
         env:
-          MIN_TS_INPUT: ${{ steps.window.outputs.min_ts }}
-          MAX_TS_INPUT: ${{ steps.window.outputs.max_ts }}
+          MIN_TS_INPUT: ${{ inputs.min_ts }}
+          MAX_TS_INPUT: ${{ inputs.max_ts }}
           MAX_TRADE_PAGES: ${{ inputs.max_trade_pages_per_tier }}
           MAX_CATALOG_PAGES: ${{ inputs.max_catalog_pages_per_tier }}
           MAX_CATALOG_MARKETS: ${{ inputs.max_catalog_markets }}

@@ -54,21 +54,27 @@ jobs:
           report = json.loads(Path("walk-forward-report.json").read_text())
           aggregate = report["aggregate"]
           model = aggregate["model_brier"]
-          midpoint = aggregate["market_midpoint_brier"]
           neutral = aggregate["neutral_brier"]
+          matched_model = aggregate["model_market_matched_brier"]
+          midpoint = aggregate["market_midpoint_brier"]
           if model is None or neutral is None:
               raise SystemExit("Evaluation did not produce model and neutral Brier scores")
+          if (matched_model is None) != (midpoint is None):
+              raise SystemExit("Matched model and market benchmark availability differs")
+          if matched_model and matched_model["observations"] != midpoint["observations"]:
+              raise SystemExit("Matched model and market benchmark counts differ")
           summary = {
               "folds": len(report["folds"]),
-              "model_brier": model,
-              "neutral_brier": neutral,
+              "model_brier_full_sample": model,
+              "neutral_brier_full_sample": neutral,
+              "model_brier_market_matched": matched_model,
               "market_midpoint_brier": midpoint,
-              "model_brier_skill_vs_neutral": (
+              "model_brier_skill_vs_neutral_full_sample": (
                   1 - model["brier"] / neutral["brier"] if neutral["brier"] else None
               ),
-              "model_brier_skill_vs_market_midpoint": (
-                  1 - model["brier"] / midpoint["brier"]
-                  if midpoint and midpoint["brier"] else None
+              "model_brier_skill_vs_market_midpoint_matched_sample": (
+                  1 - matched_model["brier"] / midpoint["brier"]
+                  if matched_model and midpoint and midpoint["brier"] else None
               ),
               "diagnostics": report.get("diagnostics", {}),
               "prediction_rows": len(report.get("prediction_rows", [])),

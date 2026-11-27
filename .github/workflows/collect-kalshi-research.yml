@@ -4,17 +4,19 @@ on:
   workflow_dispatch:
     inputs:
       min_ts:
-        description: "Start of trade/candle window (Unix seconds, inclusive)"
-        required: true
+        description: "Optional start timestamp; blank defaults to 32 days before max_ts"
+        required: false
+        default: ""
         type: string
       max_ts:
-        description: "End of trade/candle window (Unix seconds, exclusive)"
-        required: true
+        description: "Optional end timestamp; blank defaults to current UTC time"
+        required: false
+        default: ""
         type: string
       max_trade_pages_per_tier:
         description: "Trade-page cap per live/archive tier (prevents oversized research artifacts)"
         required: true
-        default: "10"
+        default: "2"
         type: string
       max_catalog_pages_per_tier:
         description: "Catalog pages per live/archive tier to inspect for resolved markets"
@@ -24,7 +26,7 @@ on:
       max_catalog_markets:
         description: "Maximum evenly distributed resolved catalog markets to add"
         required: true
-        default: "500"
+        default: "200"
         type: string
 
 permissions:
@@ -40,18 +42,26 @@ jobs:
     timeout-minutes: 360
     steps:
       - name: Validate requested time window and page budgets
+        id: window
         shell: bash
         env:
-          MIN_TS: ${{ inputs.min_ts }}
-          MAX_TS: ${{ inputs.max_ts }}
+          MIN_TS_INPUT: ${{ steps.window.outputs.min_ts }}
+          MAX_TS_INPUT: ${{ steps.window.outputs.max_ts }}
           MAX_TRADE_PAGES: ${{ inputs.max_trade_pages_per_tier }}
           MAX_CATALOG_PAGES: ${{ inputs.max_catalog_pages_per_tier }}
           MAX_CATALOG_MARKETS: ${{ inputs.max_catalog_markets }}
         run: |
           set -euo pipefail
-          [[ "$MIN_TS" =~ ^[0-9]{1,12}$ ]] || { echo "min_ts must be Unix seconds"; exit 1; }
+          MAX_TS="$MAX_TS_INPUT"
+          MIN_TS="$MIN_TS_INPUT"
+          [[ -n "$MAX_TS" ]] || MAX_TS="$(date -u +%s)"
           [[ "$MAX_TS" =~ ^[0-9]{1,12}$ ]] || { echo "max_ts must be Unix seconds"; exit 1; }
+          [[ -n "$MIN_TS" ]] || MIN_TS="$((MAX_TS - 32 * 24 * 60 * 60))"
+          [[ "$MIN_TS" =~ ^[0-9]{1,12}$ ]] || { echo "min_ts must be Unix seconds"; exit 1; }
           (( MAX_TS > MIN_TS )) || { echo "max_ts must be greater than min_ts"; exit 1; }
+          (( MAX_TS - MIN_TS <= 45 * 24 * 60 * 60 )) || { echo "Collection window is capped at 45 days; leave timestamps blank for the default 32-day window"; exit 1; }
+          echo "min_ts=$MIN_TS" >> "$GITHUB_OUTPUT"
+          echo "max_ts=$MAX_TS" >> "$GITHUB_OUTPUT"
           [[ "$MAX_TRADE_PAGES" =~ ^[0-9]{1,4}$ ]] || { echo "max_trade_pages_per_tier must be a positive integer"; exit 1; }
           (( MAX_TRADE_PAGES >= 1 && MAX_TRADE_PAGES <= 20 )) || { echo "max_trade_pages_per_tier must be between 1 and 20"; exit 1; }
           [[ "$MAX_CATALOG_PAGES" =~ ^[0-9]{1,2}$ ]] || { echo "max_catalog_pages_per_tier must be a positive integer"; exit 1; }
@@ -69,8 +79,8 @@ jobs:
       - name: Collect bounded public trades
         run: >-
           python -m engine.trade_collector
-          --min-ts "${{ inputs.min_ts }}"
-          --max-ts "${{ inputs.max_ts }}"
+          --min-ts "${{ steps.window.outputs.min_ts }}"
+          --max-ts "${{ steps.window.outputs.max_ts }}"
           --max-pages-per-tier "${{ inputs.max_trade_pages_per_tier }}"
           --output data/trade_snapshots.jsonl
       - name: Hydrate metadata for traded markets
@@ -98,24 +108,24 @@ jobs:
           python -m engine.research_market_union
           --hydrated data/trade_market_snapshots.jsonl
           --catalog data/catalog_market_snapshots.jsonl
-          --min-ts "${{ inputs.min_ts }}"
-          --max-ts "${{ inputs.max_ts }}"
+          --min-ts "${{ steps.window.outputs.min_ts }}"
+          --max-ts "${{ steps.window.outputs.max_ts }}"
           --max-catalog-markets "${{ inputs.max_catalog_markets }}"
           --output data/market_snapshots.jsonl
       - name: Collect bounded historical trades for research markets
         run: >-
           python -m engine.market_trade_collector
           --markets data/market_snapshots.jsonl
-          --min-ts "${{ inputs.min_ts }}"
-          --max-ts "${{ inputs.max_ts }}"
+          --min-ts "${{ steps.window.outputs.min_ts }}"
+          --max-ts "${{ steps.window.outputs.max_ts }}"
           --max-pages-per-tier "${{ inputs.max_trade_pages_per_tier }}"
           --output data/trade_snapshots.jsonl
       - name: Collect historical one-minute candles for research markets
         run: >-
           python -m engine.candlestick_collector
           --markets data/market_snapshots.jsonl
-          --start-ts "${{ inputs.min_ts }}"
-          --end-ts "${{ inputs.max_ts }}"
+          --start-ts "${{ steps.window.outputs.min_ts }}"
+          --end-ts "${{ steps.window.outputs.max_ts }}"
           --period-interval 1
           --output data/candlestick_snapshots.jsonl
       - name: Build ordinary binary research subset
@@ -156,8 +166,8 @@ jobs:
           print(json.dumps(manifest, indent=2))
           PY
         env:
-          MIN_TS: ${{ inputs.min_ts }}
-          MAX_TS: ${{ inputs.max_ts }}
+          MIN_TS: ${{ steps.window.outputs.min_ts }}
+          MAX_TS: ${{ steps.window.outputs.max_ts }}
       - name: Upload research data artifact
         if: always()
         uses: actions/upload-artifact@v4

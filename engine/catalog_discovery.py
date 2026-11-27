@@ -20,7 +20,7 @@ from .kalshi_data import append_jsonl, snapshot_record
 # Search the archive first: it is where the requested pre-cutoff settled
 # cohort lives. The live settled tier is still scanned after the archive.
 TIERS = ("historical/markets", "markets")
-STATE_VERSION = 2
+STATE_VERSION = 3
 
 
 def _atomic_json(path: Path, value: dict[str, Any]) -> None:
@@ -55,13 +55,31 @@ def _load_seen_tickers(path: Path) -> set[str]:
     return seen
 
 
+def _unix_seconds(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str) and value.strip():
+        try:
+            parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                return None
+            return parsed.astimezone(timezone.utc).timestamp()
+        except (TypeError, ValueError, OverflowError):
+            return None
+    return None
+
+
 def discover_resumable(
     client: KalshiPublicClient,
     output_path: str | Path,
     state_path: str | Path,
     *,
     limit: int = 1000,
-    max_pages_per_tier: int = 10,
+    max_pages_per_tier: int = 250,
+    min_ts: int | None = None,
+    max_ts: int | None = None,
 ) -> dict[str, Any]:
     """Append complete pages, then atomically checkpoint their next cursor.
 
@@ -72,24 +90,34 @@ def discover_resumable(
         raise ValueError("limit must be between 1 and 1000")
     if max_pages_per_tier < 1:
         raise ValueError("max_pages_per_tier must be positive")
+    if (min_ts is None) != (max_ts is None):
+        raise ValueError("min_ts and max_ts must be supplied together")
+    if min_ts is not None and (isinstance(min_ts, bool) or isinstance(max_ts, bool)
+            or not isinstance(min_ts, int) or not isinstance(max_ts, int)
+            or min_ts < 0 or max_ts <= min_ts):
+        raise ValueError("invalid settlement window")
+    window = {"min_ts": min_ts, "max_ts": max_ts} if min_ts is not None else None
     output = Path(output_path)
     state_file = Path(state_path)
     if state_file.exists():
         state = json.loads(state_file.read_text(encoding="utf-8"))
-        if state.get("version") != STATE_VERSION or state.get("limit") != limit:
-            raise ValueError("Checkpoint version or page size mismatch; use matching settings")
+        if (state.get("version") != STATE_VERSION or state.get("limit") != limit
+                or state.get("window") != window):
+            raise ValueError("Checkpoint version, page size, or settlement window mismatch; use matching settings")
         if state.get("tier") not in (*TIERS, "complete"):
             raise ValueError("Checkpoint contains an unknown tier")
     else:
         state = {
             "version": STATE_VERSION,
             "limit": limit,
+            "window": window,
             "tier": TIERS[0],
             "cursor": None,
             "pages_completed": {tier: 0 for tier in TIERS},
             "scanned": 0,
             "written": 0,
             "rejected": 0,
+            "outside_window": 0,
             "duplicates": 0,
             "captured_at": datetime.now(timezone.utc).isoformat(),
             "historical_cutoff": client.get_historical_cutoff(),
@@ -123,6 +151,7 @@ def discover_resumable(
         records = []
         page_rejected = 0
         page_duplicates = 0
+        page_outside_window = 0
         for raw_market in page:
             state["scanned"] += 1
             # Market-list payloads can omit series_ticker. Resolve it from the
@@ -131,6 +160,11 @@ def discover_resumable(
                 enrich_market_series(raw_market, series_records), categories
             )
             ticker = market.get("ticker")
+            if window is not None:
+                settled_ts = _unix_seconds(market.get("settlement_ts"))
+                if settled_ts is None or not min_ts <= settled_ts < max_ts:
+                    page_outside_window += 1
+                    continue
             if isinstance(ticker, str) and ticker:
                 if ticker in seen:
                     page_duplicates += 1
@@ -148,6 +182,7 @@ def discover_resumable(
         written = append_jsonl(records, output)
         state["written"] += written
         state["rejected"] += page_rejected
+        state["outside_window"] += page_outside_window
         state["duplicates"] += page_duplicates
         state["pages_completed"][tier] += 1
         pages_this_run[tier] += 1
@@ -165,7 +200,8 @@ def discover_resumable(
         print(
             f"Catalog checkpoint: tier={tier}, page={state['pages_completed'][tier]}, "
             f"page_markets={len(page)}, total_scanned={state['scanned']}, "
-            f"total_written={state['written']}, duplicates={state['duplicates']}, "
+            f"total_written={state['written']}, outside_window={state['outside_window']}, "
+            f"duplicates={state['duplicates']}, "
             f"elapsed_seconds={int(elapsed)}",
             flush=True,
         )
@@ -181,12 +217,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output", default="data/market_universe_snapshots.jsonl")
     parser.add_argument("--state-file", default="data/market_universe_state.json")
     parser.add_argument("--limit", type=int, default=1000)
-    parser.add_argument("--max-pages-per-tier", type=int, default=10)
+    parser.add_argument("--max-pages-per-tier", type=int, default=250)
+    parser.add_argument("--min-ts", type=int)
+    parser.add_argument("--max-ts", type=int)
     args = parser.parse_args(argv)
     try:
         report = discover_resumable(
             KalshiPublicClient(), args.output, args.state_file,
             limit=args.limit, max_pages_per_tier=args.max_pages_per_tier,
+            min_ts=args.min_ts, max_ts=args.max_ts,
         )
     except (ValueError, RuntimeError) as exc:
         parser.exit(1, f"Discovery failed: {exc}\n")

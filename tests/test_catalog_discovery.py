@@ -125,6 +125,29 @@ class ResumableCatalogTests(unittest.TestCase):
             self.assertEqual(replay["duplicates"], 1)
             self.assertEqual(replay["cursor"], "live-2")
 
+    def test_window_filter_keeps_only_settlements_inside_requested_range(self):
+        class WindowClient(PagedClient):
+            def get_market_page(self, endpoint, *, cursor, limit, status=None, mve_filter=None):
+                if endpoint == "historical/markets":
+                    return ([
+                        {"ticker": "OLD", "series_ticker": "S", "settlement_ts": "2026-08-10T23:59:59Z"},
+                        {"ticker": "IN", "series_ticker": "S", "settlement_ts": "2026-08-11T00:00:00Z"},
+                        {"ticker": "END", "series_ticker": "S", "settlement_ts": "2026-09-25T00:00:00Z"},
+                    ], None)
+                return ([], None)
+
+        with TemporaryDirectory() as folder:
+            output = Path(folder) / "catalog.jsonl"
+            state = Path(folder) / "state.json"
+            report = discover_resumable(
+                WindowClient(), output, state, max_pages_per_tier=1,
+                min_ts=1786406400, max_ts=1790294400,
+            )
+            rows = [json.loads(line) for line in output.read_text().splitlines()]
+            self.assertEqual([row["market"]["ticker"] for row in rows], ["IN"])
+            self.assertEqual(report["outside_window"], 2)
+            self.assertEqual(report["window"], {"min_ts": 1786406400, "max_ts": 1790294400})
+
 
 if __name__ == "__main__":
     unittest.main()

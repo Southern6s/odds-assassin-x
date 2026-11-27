@@ -6,7 +6,7 @@ optimistic upper bound, not a guarantee of fills or queue priority.
 """
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, replace
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 import math
 from typing import Any, Iterable, Mapping
@@ -117,12 +117,14 @@ def simulate_paper_execution(
     trades: list[dict[str, Any]] = []
     blocked: dict[str, int] = {}
     realized = 0.0
+    daily_realized: dict[str, float] = {}
     peak_open_risk = 0.0
 
     def block(reason: str) -> None:
         blocked[reason] = blocked.get(reason, 0) + 1
 
     for timestamp, ticker, p_yes, quote_age, row in normalized:
+        trading_day = timestamp.date().isoformat()
         if quote_age is None:
             block("missing_quote_age")
             continue
@@ -154,6 +156,9 @@ def simulate_paper_execution(
             )
             if decision.contracts_to_close:
                 realized += decision.estimated_net_pnl
+                daily_realized[trading_day] = (
+                    daily_realized.get(trading_day, 0.0) + decision.estimated_net_pnl
+                )
                 trades.append({
                     "timestamp": timestamp.isoformat(), "market_ticker": ticker,
                     "side": position.side, "action": decision.action,
@@ -171,7 +176,7 @@ def simulate_paper_execution(
                 block(decision.reason)
             continue
 
-        if realized <= -config.daily_loss_limit:
+        if daily_realized.get(trading_day, 0.0) <= -config.daily_loss_limit:
             block("daily_loss_limit_reached")
             continue
         candidates = []
@@ -190,7 +195,10 @@ def simulate_paper_execution(
             continue
         side, fair, ask, ask_size = max(
             candidates, key=lambda candidate: candidate[1] - candidate[2])
-        entry_price = min(1.0, ask + config.slippage_per_contract)
+        entry_price = ask + config.slippage_per_contract
+        if entry_price > 1.0:
+            block("entry_cost_exceeds_contract_payout")
+            continue
         risk_per_contract = entry_price + config.fee_per_contract
         open_risk = sum(p.contracts * (p.entry_price + p.entry_fee_per_contract)
                         for p in positions.values())

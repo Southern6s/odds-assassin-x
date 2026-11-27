@@ -50,8 +50,13 @@ jobs:
           python - <<'PY'
           import json
           from pathlib import Path
+          from engine.paper_execution import simulate_paper_execution
 
           report = json.loads(Path("walk-forward-report.json").read_text())
+          execution = simulate_paper_execution(report["prediction_rows"])
+          Path("paper-execution-report.json").write_text(
+              json.dumps(execution, indent=2) + chr(10)
+          )
           aggregate = report["aggregate"]
           model = aggregate["model_brier"]
           neutral = aggregate["neutral_brier"]
@@ -80,7 +85,18 @@ jobs:
               "prediction_rows": len(report.get("prediction_rows", [])),
               "paper_only": True,
               "live_trading": False,
-              "execution_simulated": False,
+              "execution_simulated": True,
+              "paper_execution": {
+                  "entry_count": execution["entry_count"],
+                  "exit_count": execution["exit_count"],
+                  "realized_net_pnl": execution["realized_net_pnl"],
+                  "unrealized_net_pnl_estimate": execution["unrealized_net_pnl_estimate"],
+                  "combined_net_pnl_estimate": execution["combined_net_pnl_estimate"],
+                  "open_positions": execution["open_positions"],
+                  "blocked_signal_counts": execution["blocked_signal_counts"],
+                  "requires_displayed_depth": execution["requires_displayed_depth"],
+                  "fills_are_estimates": execution["fills_are_estimates"],
+              },
               "interpretation": (
                   "Chronological out-of-sample diagnostics only. Repeated hourly "
                   "observations are not independent; no live-trading claim."
@@ -96,5 +112,6 @@ jobs:
           path: |
             walk-forward-report.json
             walk-forward-summary.json
+            paper-execution-report.json
           if-no-files-found: error
           retention-days: 30

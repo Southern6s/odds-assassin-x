@@ -13,6 +13,7 @@ from typing import Any, Iterable
 
 from .event_research import build_event_trade_features
 from .outcome_dataset import build_resolved_market_dataset
+from .market_candle_features import build_market_candle_features
 from .research_dataset import read_jsonl, write_jsonl_atomic, _market_payload
 
 
@@ -61,8 +62,9 @@ def build_dataset_panel_from_records(
 
     markets_input = list(market_snapshots)
     trades_input = list(trade_snapshots)
+    candles_input = list(candlestick_snapshots)
     quote_snapshots = list(markets_input)
-    for snapshot in candlestick_snapshots:
+    for snapshot in candles_input:
         candle = snapshot.get("candle", snapshot)
         if not isinstance(candle, dict):
             raise ValueError("candlestick snapshot must contain a candle object")
@@ -110,14 +112,26 @@ def build_dataset_panel_from_records(
     rows: list[dict[str, Any]] = []
     cutoff = start
     while cutoff <= end:
-        rows.extend(build_resolved_market_dataset(
+        cutoff_rows = build_resolved_market_dataset(
             markets,
             event_features,
             forecast_at=cutoff,
             max_feature_age_seconds=max_feature_age_seconds,
             market_snapshots=quote_snapshots,
             max_quote_age_seconds=max_quote_age_seconds,
-        ))
+        )
+        candle_features = build_market_candle_features(
+            candles_input, forecast_at=cutoff,
+            max_age_seconds=max_feature_age_seconds,
+        )
+        for row in cutoff_rows:
+            features = candle_features.get(row["market_ticker"], {})
+            for name, value in features.items():
+                if name != "market_candle_latest_at":
+                    row[f"feature_{name}"] = value
+            if features:
+                row["market_candle_latest_at"] = features["market_candle_latest_at"]
+        rows.extend(cutoff_rows)
         cutoff += timedelta(seconds=step_seconds)
     return sorted(rows, key=lambda row: (row["forecast_at"], row["market_ticker"]))
 

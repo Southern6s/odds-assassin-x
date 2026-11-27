@@ -380,6 +380,12 @@ class KalshiPublicClient:
                 seen.add(trade_id)
             yield trade
 
+    def get_market_orderbook(self, market_ticker: str) -> dict[str, Any]:
+        """Fetch the current public order book for one market (read-only)."""
+        if not isinstance(market_ticker, str) or not market_ticker.strip():
+            raise ValueError("market_ticker is required")
+        return self._get(f"markets/{market_ticker}/orderbook")
+
     def get_series(self, *, category: str | None = None) -> list[dict[str, Any]]:
         """Fetch series metadata used as the authoritative category taxonomy."""
         params = {"category": category} if category else {}

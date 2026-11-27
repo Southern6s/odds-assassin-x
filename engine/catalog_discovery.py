@@ -17,7 +17,9 @@ from .kalshi_client import (
 )
 from .kalshi_data import append_jsonl, snapshot_record
 
-TIERS = ("markets", "historical/markets")
+# Search the archive first: it is where the requested pre-cutoff settled
+# cohort lives. The live settled tier is still scanned after the archive.
+TIERS = ("historical/markets", "markets")
 STATE_VERSION = 2
 
 

@@ -18,7 +18,7 @@ from .kalshi_client import (
 from .kalshi_data import append_jsonl, snapshot_record
 
 TIERS = ("markets", "historical/markets")
-STATE_VERSION = 1
+STATE_VERSION = 2
 
 
 def _atomic_json(path: Path, value: dict[str, Any]) -> None:

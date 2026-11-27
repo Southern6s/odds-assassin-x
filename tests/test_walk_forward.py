@@ -143,5 +143,29 @@ class WalkForwardTests(unittest.TestCase):
         )
 
 
+    def test_market_midpoint_is_an_explicit_model_baseline_feature(self):
+        rows = [dict(row) for row in self.rows]
+        for row in rows:
+            label = row["probability_label_yes"]
+            row["market_yes_mid"] = 0.8 if label else 0.2
+        # Missing quotes are represented separately from a genuine 50% quote.
+        rows[2]["market_yes_mid"] = None
+
+        report = evaluate_walk_forward(
+            rows, ["yes_bid_contracts", "no_bid_contracts"],
+            min_train_size=30, test_cutoffs=1,
+        )
+        self.assertIn("market_midpoint", report["model_features"])
+        self.assertIn("market_quote_present", report["model_features"])
+        self.assertEqual(
+            report["market_baseline_features"],
+            ["market_midpoint", "market_quote_present"],
+        )
+        self.assertTrue(all(
+            0.0 <= row["model_probability"] <= 1.0
+            for row in report["prediction_rows"]
+        ))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -17,7 +17,7 @@ on:
         default: "10"
         type: string
       max_catalog_pages_per_tier:
-        description: "Catalog pages per live/archive tier to inspect for resolved markets"
+        description: "Settled-market catalog pages per live/archive tier to inspect"
         required: true
         default: "10"
         type: string
@@ -89,9 +89,9 @@ jobs:
           path: |
             data/catalog_market_snapshots.jsonl
             data/catalog_market_state.json
-          key: kalshi-catalog-${{ github.ref_name }}-${{ github.run_id }}
+          key: kalshi-catalog-settled-v2-${{ github.ref_name }}-${{ github.run_id }}
           restore-keys: |
-            kalshi-catalog-${{ github.ref_name }}-
+            kalshi-catalog-settled-v2-${{ github.ref_name }}-
       - name: Discover expanded live and historical market catalog
         run: >-
           python -m engine.catalog_discovery
@@ -106,6 +106,10 @@ jobs:
           --min-ts "${{ inputs.min_ts }}"
           --max-ts "${{ inputs.max_ts }}"
           --max-catalog-markets "${{ inputs.max_catalog_markets }}"
+          --min-markets 30
+          --min-events 10
+          --min-per-outcome 5
+          --min-categories 2
           --output data/market_snapshots.jsonl
       - name: Collect bounded historical trades for research markets
         run: >-
@@ -115,7 +119,7 @@ jobs:
           --max-ts "${{ inputs.max_ts }}"
           --max-pages-per-tier "${{ inputs.max_trade_pages_per_tier }}"
           --output data/trade_snapshots.jsonl
-      - name: Collect bounded historical one-minute candles for research markets
+      - name: Collect bounded hourly candles for research markets
         run: >-
           python -m engine.candlestick_collector
           --markets data/market_snapshots.jsonl
@@ -123,6 +127,31 @@ jobs:
           --end-ts "${{ inputs.max_ts }}"
           --period-interval 60
           --output data/candlestick_snapshots.jsonl
+      - name: Require usable hourly candle coverage
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path("data/candlestick_snapshots.jsonl")
+          if not path.exists() or path.stat().st_size == 0:
+              raise SystemExit("No hourly candles were returned; refusing to build a quote panel.")
+          tickers = set()
+          with path.open(encoding="utf-8") as stream:
+              for line in stream:
+                  if not line.strip():
+                      continue
+                  row = json.loads(line)
+                  candle = row.get("candle", row)
+                  ticker = candle.get("market_ticker") if isinstance(candle, dict) else None
+                  if ticker:
+                      tickers.add(ticker)
+          print(json.dumps({"hourly_candle_markets": len(tickers)}, indent=2))
+          if len(tickers) < 10:
+              raise SystemExit("Hourly candles cover fewer than 10 markets; refusing to build a weak panel.")
+          PY
       - name: Build ordinary binary research subset
         run: >-
           python -m engine.filter_research_universe

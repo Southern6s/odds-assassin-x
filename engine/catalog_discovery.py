@@ -17,8 +17,10 @@ from .kalshi_client import (
 )
 from .kalshi_data import append_jsonl, snapshot_record
 
-TIERS = ("markets", "historical/markets")
-STATE_VERSION = 1
+# Search the archive first: it is where the requested pre-cutoff settled
+# cohort lives. The live settled tier is still scanned after the archive.
+TIERS = ("historical/markets", "markets")
+STATE_VERSION = 2
 
 
 def _atomic_json(path: Path, value: dict[str, Any]) -> None:
@@ -104,8 +106,16 @@ def discover_resumable(
         tier = state["tier"]
         if pages_this_run[tier] >= max_pages_per_tier:
             break
+        # The live market catalog defaults toward active listings. Explicitly
+        # request settled markets so the resolved cohort is not drowned out by
+        # currently open contracts. The historical tier contains archived
+        # settled markets and does not accept a status filter.
         page, next_cursor = client.get_market_page(
-            tier, cursor=state["cursor"], limit=limit
+            tier,
+            cursor=state["cursor"],
+            limit=limit,
+            status="settled" if tier == "markets" else None,
+            mve_filter="exclude",
         )
         # Each page gets its own capture time. The checkpoint captured_at
         # remains the discovery session start, not a timestamp for later pages.

@@ -49,7 +49,7 @@ def merge_settlement_window_markets(
     min_ts: int,
     max_ts: int,
     max_catalog_markets: int = 300,
-) -> tuple[list[dict[str, Any]], dict[str, int]]:
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Union only resolved ordinary-binary markets inside the requested window."""
     if isinstance(min_ts, bool) or not isinstance(min_ts, int) or min_ts < 0:
         raise ValueError("min_ts must be a nonnegative integer")
@@ -115,7 +115,24 @@ def merge_settlement_window_markets(
         add(row)
 
     result = [merged[key] for key in sorted(merged)]
+    result_markets = [market_payload(row) for row in result]
+    outcome_counts = {
+        outcome: sum(market.get("result") == outcome for market in result_markets)
+        for outcome in ("yes", "no")
+    }
+    unique_events = {
+        market.get("event_ticker") for market in result_markets
+        if isinstance(market.get("event_ticker"), str) and market.get("event_ticker")
+    }
+    category_counts: dict[str, int] = {}
+    for market in result_markets:
+        category = market.get("category")
+        if isinstance(category, str) and category.strip():
+            category_counts[category] = category_counts.get(category, 0) + 1
     return result, {
+        "unique_events": len(unique_events),
+        "outcome_counts": outcome_counts,
+        "category_counts": dict(sorted(category_counts.items())),
         "trade_hydrated_markets": len(hydrated_seen),
         "trade_hydrated_ordinary_binary_resolved_in_window": len(hydrated_tickers),
         "trade_hydrated_markets_excluded": len(hydrated_seen - hydrated_tickers),
@@ -137,6 +154,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--min-ts", required=True, type=int)
     parser.add_argument("--max-ts", required=True, type=int)
     parser.add_argument("--max-catalog-markets", type=int, default=300)
+    parser.add_argument("--min-markets", type=int, default=30)
+    parser.add_argument("--min-events", type=int, default=10)
+    parser.add_argument("--min-per-outcome", type=int, default=5)
+    parser.add_argument("--min-categories", type=int, default=2)
     parser.add_argument("--output", required=True)
     args = parser.parse_args(argv)
     try:
@@ -153,9 +174,28 @@ def main(argv: list[str] | None = None) -> int:
                 handle.write(json.dumps(row, separators=(",", ":"), sort_keys=True, allow_nan=False))
                 handle.write("\n")
         temporary.replace(destination)
+        quality_checks = {
+            "markets": report["unique_markets_after_union"] >= args.min_markets,
+            "events": report["unique_events"] >= args.min_events,
+            "yes_outcomes": report["outcome_counts"]["yes"] >= args.min_per_outcome,
+            "no_outcomes": report["outcome_counts"]["no"] >= args.min_per_outcome,
+            "categories": len(report["category_counts"]) >= args.min_categories,
+        }
+        report["quality_gate"] = {
+            "passed": all(quality_checks.values()),
+            "checks": quality_checks,
+            "minimums": {
+                "markets": args.min_markets,
+                "events": args.min_events,
+                "per_outcome": args.min_per_outcome,
+                "categories": args.min_categories,
+            },
+        }
     except (OSError, ValueError) as exc:
         parser.exit(2, f"Settlement-window market merge failed: {exc}\n")
     print(json.dumps(report, indent=2, sort_keys=True))
+    if not report["quality_gate"]["passed"]:
+        parser.exit(3, "Resolved-market cohort failed quality gates; skipping expensive collection.\n")
     return 0
 
 

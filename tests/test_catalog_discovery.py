@@ -17,8 +17,8 @@ class PagedClient:
     def get_series(self):
         return [{"ticker": "S", "category": "Sports"}]
 
-    def get_market_page(self, endpoint, *, cursor, limit):
-        self.calls.append((endpoint, cursor, limit))
+    def get_market_page(self, endpoint, *, cursor, limit, status=None, mve_filter=None):
+        self.calls.append((endpoint, cursor, limit, status, mve_filter))
         pages = {
             ("markets", None): ([{"ticker": "A", "series_ticker": "S", "yes_bid": 40}], "live-2"),
             ("markets", "live-2"): ([{"ticker": "B", "series_ticker": "S", "yes_bid": 30}], None),
@@ -40,7 +40,7 @@ class ResumableCatalogTests(unittest.TestCase):
             self.assertFalse(first["complete"])
             self.assertEqual(first["tier"], "markets")
             self.assertEqual(first["cursor"], "live-2")
-            self.assertEqual(len(output.read_text().splitlines()), 1)
+            self.assertEqual(len(output.read_text().splitlines()), 2)
 
             second = discover_resumable(
                 client, output, state, limit=1000, max_pages_per_tier=1
@@ -50,16 +50,22 @@ class ResumableCatalogTests(unittest.TestCase):
                 "markets": 2, "historical/markets": 1
             })
             rows = [json.loads(line) for line in output.read_text().splitlines()]
+            # Archive-first discovery intentionally writes C before live A/B.
             self.assertEqual(
-                [row["market"]["ticker"] for row in rows], ["A", "B", "C"]
+                [row["market"]["ticker"] for row in rows], ["C", "A", "B"]
             )
             self.assertEqual([call[1] for call in client.calls], [
-                None, "live-2", None
+                None, None, "live-2"
+            ])
+            self.assertEqual([call[3:] for call in client.calls], [
+                (None, "exclude"),
+                ("settled", "exclude"),
+                ("settled", "exclude"),
             ])
 
     def test_catalog_market_without_series_ticker_gets_authoritative_category(self):
         class MissingSeriesTickerClient(PagedClient):
-            def get_market_page(self, endpoint, *, cursor, limit):
+            def get_market_page(self, endpoint, *, cursor, limit, status=None, mve_filter=None):
                 if endpoint == "markets" and cursor is None:
                     return ([{
                         "ticker": "S-EVENT-MARKET",
@@ -115,7 +121,7 @@ class ResumableCatalogTests(unittest.TestCase):
                 client, output, state, max_pages_per_tier=1
             )
             rows = [json.loads(line) for line in output.read_text().splitlines()]
-            self.assertEqual(len(rows), 1)
+            self.assertEqual(len(rows), 2)
             self.assertEqual(replay["duplicates"], 1)
             self.assertEqual(replay["cursor"], "live-2")
 

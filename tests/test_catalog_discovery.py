@@ -57,6 +57,27 @@ class ResumableCatalogTests(unittest.TestCase):
                 None, "live-2", None
             ])
 
+    def test_catalog_market_without_series_ticker_gets_authoritative_category(self):
+        class MissingSeriesTickerClient(PagedClient):
+            def get_market_page(self, endpoint, *, cursor, limit):
+                if endpoint == "markets" and cursor is None:
+                    return ([{
+                        "ticker": "S-EVENT-MARKET",
+                        "event_ticker": "S-EVENT",
+                        "result": "yes",
+                    }], None)
+                return ([], None)
+
+        with TemporaryDirectory() as folder:
+            output = Path(folder) / "catalog.jsonl"
+            state = Path(folder) / "state.json"
+            discover_resumable(
+                MissingSeriesTickerClient(), output, state, max_pages_per_tier=1
+            )
+            row = json.loads(output.read_text().splitlines()[0])
+            self.assertEqual(row["market"]["series_ticker"], "S")
+            self.assertEqual(row["market"]["category"], "Sports")
+
     def test_market_rows_use_page_capture_time_not_session_start(self):
         client = PagedClient()
         with TemporaryDirectory() as folder:

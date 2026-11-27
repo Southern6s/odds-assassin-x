@@ -152,6 +152,19 @@ def build_resolved_market_dataset(
             row["quote_captured_at"] = quote_at.isoformat()
             row["quote_age_seconds"] = (cutoff - quote_at).total_seconds()
             row.update({f"market_{key}": value for key, value in quote_values.items()})
+            for side in ("yes", "no"):
+                for book_side in ("bid", "ask"):
+                    size = quote.get(f"{side}_{book_side}_size")
+                    if size is not None:
+                        try:
+                            size_number = float(size)
+                        except (TypeError, ValueError) as exc:
+                            raise ValueError(f"{side}_{book_side}_size must be numeric") from exc
+                        if not isfinite(size_number) or size_number < 0:
+                            raise ValueError(f"{side}_{book_side}_size must be finite and nonnegative")
+                        row[f"market_{side}_{book_side}_size"] = size_number
+                    else:
+                        row[f"market_{side}_{book_side}_size"] = None
             bid, ask = quote_values["yes_bid"], quote_values["yes_ask"]
             row["market_yes_mid"] = (bid + ask) / 2 if bid is not None and ask is not None else None
         rows.append(row)

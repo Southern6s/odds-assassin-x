@@ -92,6 +92,8 @@ def simulate_paper_execution(
         _number(getattr(config, name), name, minimum=0)
     if config.max_trade_risk <= 0 or config.max_portfolio_risk <= 0:
         raise ValueError("trade and portfolio risk caps must be positive")
+    if config.daily_loss_limit <= 0:
+        raise ValueError("daily_loss_limit must be positive")
     if isinstance(config.max_contracts, bool) or not isinstance(config.max_contracts, int) or config.max_contracts < 1:
         raise ValueError("max_contracts must be a positive integer")
 

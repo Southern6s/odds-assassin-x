@@ -62,6 +62,25 @@ class PaperExecutionTests(unittest.TestCase):
         self.assertEqual(report["entry_count"], 1)
         self.assertEqual(report["trades"][0]["side"], "no")
 
+    def test_daily_loss_limit_blocks_rest_of_day_but_resets_next_day(self):
+        first = row("M1", 0, 0.90, 0.48, 0.50, 5, 5)
+        loss = row("M1", 1, 0.90, 0.30, 0.31, 5, 5)
+        same_day = row("M2", 2, 0.90, 0.48, 0.50, 5, 5)
+        next_day = {
+            **row("M3", 0, 0.90, 0.48, 0.50, 5, 5),
+            "forecast_at": "2026-01-02T00:00:00+00:00",
+        }
+        config = PaperExecutionConfig(daily_loss_limit=0.10)
+        report = simulate_paper_execution(
+            [first, loss, same_day, next_day], config=config
+        )
+        self.assertEqual(report["entry_count"], 2)
+        self.assertEqual(report["exit_count"], 1)
+        self.assertEqual(report["trades"][-1]["market_ticker"], "M3")
+        self.assertEqual(
+            report["blocked_signal_counts"]["daily_loss_limit_reached"], 1
+        )
+
     def test_invalid_probability_is_rejected(self):
         data = row("M1", 0, 1.2, 0.45, 0.50, 5, 5)
         with self.assertRaises(ValueError):

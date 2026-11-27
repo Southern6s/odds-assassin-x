@@ -91,11 +91,13 @@ jobs:
             data/catalog_market_state.json
           key: kalshi-catalog-settled-v3-${{ github.ref_name }}-${{ github.run_id }}
           restore-keys: |
-            kalshi-catalog-settled-v2-${{ github.ref_name }}-
+            kalshi-catalog-settled-v3-${{ github.ref_name }}-
       - name: Discover expanded live and historical market catalog
         run: >-
           python -m engine.catalog_discovery
           --max-pages-per-tier "${{ inputs.max_catalog_pages_per_tier }}"
+          --min-ts "${{ inputs.min_ts }}"
+          --max-ts "${{ inputs.max_ts }}"
           --output data/catalog_market_snapshots.jsonl
           --state-file data/catalog_market_state.json
       - name: Add resolved ordinary binary markets from requested settlement window

@@ -5,7 +5,7 @@ from engine.model_competition import evaluate_model_competition
 
 
 class ModelCompetitionTests(unittest.TestCase):
-    def test_compares_three_candidates_on_common_chronological_rows(self):
+    def test_compares_four_candidates_on_common_chronological_rows(self):
         rows = []
         base = datetime(2026, 1, 1, tzinfo=timezone.utc)
         for day in range(9):
@@ -31,10 +31,10 @@ class ModelCompetitionTests(unittest.TestCase):
             test_cutoffs=1,
         )
         self.assertEqual(set(report["candidate_models"]),
-                         {"market_calibrated", "event_only", "combined"})
+                         {"market_calibrated", "event_only", "combined", "bayesian_shrinkage"})
         self.assertEqual(report["common_out_of_sample_observations"],
                          report["market_quote_matched_observations"])
-        self.assertEqual(len(report["leaderboard"]), 3)
+        self.assertEqual(len(report["leaderboard"]), 4)
         self.assertEqual({item["category"] for item in report["category_leaderboard"]},
                          {"Sports", "Politics", "Economics"})
         self.assertEqual(report["market_midpoint_baseline"]["observations"],

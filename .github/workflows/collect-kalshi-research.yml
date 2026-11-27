@@ -121,7 +121,7 @@ jobs:
           --markets data/market_snapshots.jsonl
           --start-ts "${{ inputs.min_ts }}"
           --end-ts "${{ inputs.max_ts }}"
-          --period-interval 1
+          --period-interval 60
           --output data/candlestick_snapshots.jsonl
       - name: Build ordinary binary research subset
         run: >-

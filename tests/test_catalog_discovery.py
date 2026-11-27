@@ -17,8 +17,8 @@ class PagedClient:
     def get_series(self):
         return [{"ticker": "S", "category": "Sports"}]
 
-    def get_market_page(self, endpoint, *, cursor, limit):
-        self.calls.append((endpoint, cursor, limit))
+    def get_market_page(self, endpoint, *, cursor, limit, status=None, mve_filter=None):
+        self.calls.append((endpoint, cursor, limit, status, mve_filter))
         pages = {
             ("markets", None): ([{"ticker": "A", "series_ticker": "S", "yes_bid": 40}], "live-2"),
             ("markets", "live-2"): ([{"ticker": "B", "series_ticker": "S", "yes_bid": 30}], None),

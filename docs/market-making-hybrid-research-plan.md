@@ -59,6 +59,36 @@ The reported 70.6% result belongs to a separate, privately implemented Kalshi ma
 
 Complete the synchronized depth + research-panel evaluation already in progress. Validate actual timestamp overlap first. If the depth capture does not overlap the forecast decision times, collect a new synchronized sample rather than using future snapshots or loosening the no-lookahead rule.
 
+
+## What the reported 70.6% system actually documents
+
+The published operator description is more specific than a generic Avellaneda–Stoikov bot. It describes:
+- WebSocket book and fill ingestion with sequence-continuity checks; a sequence gap invalidates the local book and forces a fresh snapshot.
+- Market-specific eligibility and quote placement that adapt to spread regime and external depth, after subtracting the bot's own resting orders.
+- Quote sizing that responds to realized fills and time of day; multi-level quote ladders and coordinated handling of correlated markets.
+- Inventory skew toward flat under per-market caps, event-level stop-losses, and cooldowns that pull quotes when flow appears informed.
+- Debounced amend/cancel lifecycle, exact-decimal price/quantity handling, and fill attribution through order lineage.
+- Single-writer fencing, market-level quarantine on ambiguous state, incident halts, and position reconstruction from exchange state after restart.
+
+The author's market-selection criteria, signals, and parameter values remain proprietary. These documented operational and control principles are useful research targets; they are not a reproducible specification of the private strategy.
+
+## Additional experiments added from that architecture
+
+1. **Book integrity gate:** reject a quote decision if the book is stale, crossed/invalid, or sequence continuity is unknown. In historical snapshot data, explicitly label this as a limitation because snapshots cannot reproduce WebSocket sequence guarantees.
+2. **Own-order accounting:** reserve a separate simulated own-order ledger and subtract own displayed size from external depth before estimating available liquidity. Do not infer queue priority from aggregate snapshots.
+3. **Fill-responsive sizing:** compare constant size with conservative sizing based on recent realized fill rate and inventory utilization. Keep time-of-day effects as a separately tested feature, not a hard-coded assumption.
+4. **Correlated event exposure:** cap aggregate exposure by event/series and stress the joint outcome where contracts are logically related.
+5. **Adverse-flow cooldown:** test quote withdrawal after adverse short-horizon markouts or abnormal trade/book imbalance; cooldown duration must be selected on training folds only.
+6. **Order-state invariants in simulation:** model order lineage, idempotent amend/cancel transitions, stale-order expiry, and fail-closed behavior after ambiguous state. This is a simulator-only state machine, not live order-routing.
+
+## Source links
+
+- Private-system operator description and reported results: https://ian-wang.com/projects/kalshi
+- Public Kalshi market-maker reference implementation: https://github.com/rodlaf/KalshiMarketMaker
+- Avellaneda–Stoikov adverse-selection comparison / synthetic simulator reference: https://github.com/kayasolomon/market-making
+
+The public repositories are independent reference projects. Neither is represented as the source code behind the reported 70.6% system.
+
 ## Reference material
 
 - Ian Wang, *Kalshi market-making bot*: published performance summary and architecture; strategy details are proprietary.

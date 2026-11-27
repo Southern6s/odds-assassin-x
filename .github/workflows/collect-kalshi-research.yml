@@ -4,11 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       min_ts:
-        description: "Start of trade/candle window (Unix seconds, inclusive)"
+        description: "Start of trade/candle window (Unix seconds, inclusive; max 45 days)"
         required: true
         type: string
       max_ts:
-        description: "End of trade/candle window (Unix seconds, exclusive)"
+        description: "End of trade/candle window (Unix seconds, exclusive; max 45 days)"
         required: true
         type: string
       max_trade_pages_per_tier:
@@ -52,6 +52,11 @@ jobs:
           [[ "$MIN_TS" =~ ^[0-9]{1,12}$ ]] || { echo "min_ts must be Unix seconds"; exit 1; }
           [[ "$MAX_TS" =~ ^[0-9]{1,12}$ ]] || { echo "max_ts must be Unix seconds"; exit 1; }
           (( MAX_TS > MIN_TS )) || { echo "max_ts must be greater than min_ts"; exit 1; }
+          MAX_WINDOW_SECONDS=$((45 * 24 * 60 * 60))
+          (( MAX_TS - MIN_TS <= MAX_WINDOW_SECONDS )) || {
+            echo "Research collection is capped at 45 days; use a separate historical backfill for longer studies."
+            exit 1
+          }
           [[ "$MAX_TRADE_PAGES" =~ ^[0-9]{1,4}$ ]] || { echo "max_trade_pages_per_tier must be a positive integer"; exit 1; }
           (( MAX_TRADE_PAGES >= 1 && MAX_TRADE_PAGES <= 20 )) || { echo "max_trade_pages_per_tier must be between 1 and 20"; exit 1; }
           [[ "$MAX_CATALOG_PAGES" =~ ^[0-9]{1,2}$ ]] || { echo "max_catalog_pages_per_tier must be a positive integer"; exit 1; }
@@ -110,7 +115,7 @@ jobs:
           --max-ts "${{ inputs.max_ts }}"
           --max-pages-per-tier "${{ inputs.max_trade_pages_per_tier }}"
           --output data/trade_snapshots.jsonl
-      - name: Collect historical one-minute candles for research markets
+      - name: Collect bounded historical one-minute candles for research markets
         run: >-
           python -m engine.candlestick_collector
           --markets data/market_snapshots.jsonl

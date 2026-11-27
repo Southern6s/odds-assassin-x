@@ -11,7 +11,11 @@ class SettlementWindowMarketUnionTests(unittest.TestCase):
                            "result": result, "settlement_ts": settlement}}
 
     def test_adds_only_resolved_ordinary_binary_markets_inside_window(self):
-        hydrated = [{"market": {"ticker": "TRADED", "settlement_ts": 150}}]
+        hydrated = [
+            self.market("TRADED", 150),
+            self.market("HYDRATED_EARLY", 99),
+            self.market("HYDRATED_EXOTICS", 150, category="Exotics"),
+        ]
         catalog = [
             self.market("EARLY", 99), self.market("IN", 100), self.market("END", 200),
             self.market("LATE", 201), self.market("NO_RESULT", 150, result=None),
@@ -22,11 +26,14 @@ class SettlementWindowMarketUnionTests(unittest.TestCase):
         )
         self.assertEqual([row["market"]["ticker"] for row in rows], ["IN", "TRADED"])
         self.assertEqual(report["catalog_eligible_resolved_ordinary_binary_markets"], 1)
+        self.assertEqual(report["trade_hydrated_ordinary_binary_resolved_in_window"], 1)
+        self.assertEqual(report["trade_hydrated_markets_excluded"], 2)
         self.assertEqual(report["added_catalog_markets"], 1)
         self.assertFalse(report["live_trading"])
 
     def test_deduplicates_catalog_against_trade_hydration(self):
-        hydrated = [{"market": {"ticker": "SAME", "source": "trade"}}]
+        hydrated = [self.market("SAME", 150)]
+        hydrated[0]["market"]["source"] = "trade"
         catalog = [self.market("SAME", 150)]
         rows, report = merge_settlement_window_markets(
             hydrated, catalog, min_ts=100, max_ts=200

@@ -59,7 +59,7 @@ class ResumableCatalogTests(unittest.TestCase):
 
     def test_catalog_market_without_series_ticker_gets_authoritative_category(self):
         class MissingSeriesTickerClient(PagedClient):
-            def get_market_page(self, endpoint, *, cursor, limit):
+            def get_market_page(self, endpoint, *, cursor, limit, status=None, mve_filter=None):
                 if endpoint == "markets" and cursor is None:
                     return ([{
                         "ticker": "S-EVENT-MARKET",

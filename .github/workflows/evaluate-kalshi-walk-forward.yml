@@ -12,7 +12,12 @@ on:
         description: "Original collection run ID used in the panel artifact name"
         required: true
         type: string
-        default: "45726061031"
+        default: "45978066420"
+      depth_run_id:
+        description: "Completed order-book depth collection run ID"
+        required: true
+        type: string
+        default: "45983704283"
 
 permissions:
   actions: read
@@ -41,7 +46,15 @@ jobs:
           github-token: ${{ github.token }}
           repository: ${{ github.repository }}
           run-id: ${{ inputs.panel_build_run_id }}
-      - name: Verify panel file
+      - name: Download timestamped depth artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: kalshi-orderbook-depth-${{ inputs.depth_run_id }}
+          path: depth-artifact
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.depth_run_id }}
+      - name: Verify panel and depth files
         run: test -s panel-artifact/research_panel.jsonl
       - name: Run leakage-safe walk-forward evaluation
         run: |
@@ -50,9 +63,21 @@ jobs:
           python - <<'PY'
           import json
           from pathlib import Path
+          from engine.depth_join import attach_depth_snapshots
           from engine.paper_execution import simulate_paper_execution
 
           report = json.loads(Path("walk-forward-report.json").read_text())
+          with Path("depth-artifact/orderbook_snapshots.jsonl").open() as handle:
+              depth_rows = [json.loads(line) for line in handle if line.strip()]
+          report["prediction_rows"] = attach_depth_snapshots(
+              report["prediction_rows"], depth_rows, max_age_seconds=300
+          )
+          Path("walk-forward-report.json").write_text(
+              json.dumps(report, indent=2) + chr(10)
+          )
+          matched_depth = sum(
+              row["depth_snapshot_matched"] for row in report["prediction_rows"]
+          )
           execution = simulate_paper_execution(report["prediction_rows"])
           Path("paper-execution-report.json").write_text(
               json.dumps(execution, indent=2) + chr(10)
@@ -83,6 +108,10 @@ jobs:
               ),
               "diagnostics": report.get("diagnostics", {}),
               "prediction_rows": len(report.get("prediction_rows", [])),
+              "depth_snapshots_available": len(depth_rows),
+              "depth_matched_predictions": matched_depth,
+              "depth_unmatched_predictions": len(report["prediction_rows"]) - matched_depth,
+              "depth_max_age_seconds": 300,
               "paper_only": True,
               "live_trading": False,
               "execution_simulated": True,

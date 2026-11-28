@@ -1,0 +1,73 @@
+name: Collect synchronized Kalshi shadow snapshots
+
+on:
+  workflow_dispatch:
+    inputs:
+      max_markets:
+        description: "Maximum open markets to capture (1-100)"
+        required: true
+        default: "20"
+        type: string
+      duration_seconds:
+        description: "Collection duration in seconds (1-3600)"
+        required: true
+        default: "1800"
+        type: string
+      interval_seconds:
+        description: "Seconds between polls (5-600)"
+        required: true
+        default: "30"
+        type: string
+      max_market_pages:
+        description: "Open-market catalog pages to scan (1-10)"
+        required: true
+        default: "2"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kalshi-synchronized-shadow-capture
+  cancel-in-progress: false
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Validate inputs
+        env:
+          MAX_MARKETS: ${{ inputs.max_markets }}
+          DURATION: ${{ inputs.duration_seconds }}
+          INTERVAL: ${{ inputs.interval_seconds }}
+          PAGES: ${{ inputs.max_market_pages }}
+        run: |
+          set -euo pipefail
+          [[ "$MAX_MARKETS" =~ ^[0-9]+$ ]] && (( MAX_MARKETS >= 1 && MAX_MARKETS <= 100 ))
+          [[ "$DURATION" =~ ^[0-9]+$ ]] && (( DURATION >= 1 && DURATION <= 3600 ))
+          [[ "$INTERVAL" =~ ^[0-9]+$ ]] && (( INTERVAL >= 5 && INTERVAL <= 600 ))
+          [[ "$PAGES" =~ ^[0-9]+$ ]] && (( PAGES >= 1 && PAGES <= 10 ))
+      - name: Capture synchronized quote and depth records
+        run: |
+          set -euo pipefail
+          python -m engine.shadow_collector \
+            --output data/shadow_snapshots.jsonl \
+            --max-markets "${{ inputs.max_markets }}" \
+            --duration-seconds "${{ inputs.duration_seconds }}" \
+            --interval-seconds "${{ inputs.interval_seconds }}" \
+            --max-market-pages "${{ inputs.max_market_pages }}"
+      - name: Upload shadow snapshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kalshi-synchronized-shadow-${{ github.run_id }}
+          path: data/shadow_snapshots.jsonl
+          if-no-files-found: warn
+          retention-days: 30

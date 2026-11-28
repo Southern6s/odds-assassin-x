@@ -168,6 +168,21 @@ jobs:
               if row["resolved_at"] <= row["forecast_at"]:
                   raise SystemExit("Outcome is not strictly after its forecast cutoff")
 
+          # The upstream ordinary-binary filter only admits markets with
+          # authoritative exchange categories. Fail closed if the panel builder
+          # drops that metadata; otherwise category leaderboards silently vanish.
+          missing_category = [
+              row.get("market_ticker") for row in rows
+              if not isinstance(row.get("category"), str) or not row["category"].strip()
+          ]
+          if missing_category:
+              sample = ", ".join(str(ticker) for ticker in missing_category[:10])
+              raise SystemExit(
+                  f"Panel lost category metadata for {len(missing_category)} rows; "
+                  f"sample tickers: {sample}"
+              )
+          category_counts = Counter(row["category"].strip() for row in rows)
+
           quoted = []
           for row in rows:
               mid = row.get("market_yes_mid")
@@ -208,6 +223,11 @@ jobs:
                                  max(r["forecast_at"] for r in rows)] if rows else None),
               "settlement_date_market_counts": dict(sorted(settlement_date_counts.items())),
               "labels": dict(Counter(str(r.get("probability_label_yes")) for r in rows)),
+              "category_counts": dict(sorted(category_counts.items())),
+              "category_metadata_coverage": {
+                  "rows_with_category": len(rows) - len(missing_category),
+                  "rows_missing_category": len(missing_category),
+              },
               "quote_coverage": {
                   "rows_with_valid_yes_midpoint": len(quoted),
                   "row_coverage_fraction": round(len(quoted) / len(rows), 6) if rows else 0,

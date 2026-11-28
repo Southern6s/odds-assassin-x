@@ -48,12 +48,15 @@ class ShadowCollectorTests(unittest.TestCase):
         client.get_market_orderbook.return_value = {
             "orderbook_fp": {"yes_dollars": [["0.4", 1]], "no_dollars": [["0.5", 1]]}
         }
+        clock_values = iter([0.0, 1.0, 1.0])
+        def clock():
+            return next(clock_values, 1.0)
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaisesRegex(RuntimeError, "No shadow records"):
                 collect_shadow_snapshots(
                     client, Path(tmp) / "shadow.jsonl", duration_seconds=1,
                     wall_clock=lambda: datetime(2026, 1, 1),
-                    clock=iter([0.0, 1.0]).__next__,
+                    clock=clock,
                 )
 
     def test_validates_resource_bounds(self):

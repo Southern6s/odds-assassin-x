@@ -1,0 +1,99 @@
+name: Run five-model Kalshi competition
+
+on:
+  workflow_dispatch:
+    inputs:
+      panel_build_run_id:
+        description: "Successful Build Kalshi chronological research panel run ID"
+        required: true
+        type: string
+        default: "45998969911"
+      source_run_id:
+        description: "Original collection run ID used in the panel artifact name"
+        required: true
+        type: string
+        default: "45993599668"
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: kalshi-five-model-competition-${{ inputs.panel_build_run_id }}
+  cancel-in-progress: false
+
+jobs:
+  compete:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out current main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Download completed research panel
+        uses: actions/download-artifact@v4
+        with:
+          name: kalshi-research-panel-${{ inputs.source_run_id }}
+          path: panel-artifact
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.panel_build_run_id }}
+      - name: Verify panel and run five candidates on identical walk-forward observations
+        run: |
+          set -euo pipefail
+          test -s panel-artifact/research_panel.jsonl
+          python -m engine.model_competition \
+            --dataset panel-artifact/research_panel.jsonl \
+            --features trade_count,contract_volume,block_contract_volume,yes_vwap,no_vwap,market_count,yes_bid_contracts,yes_ask_contracts,no_bid_contracts,no_ask_contracts \
+            --min-train-size 30 \
+            --test-cutoffs 1 \
+            --step-cutoffs 1 > five-model-competition.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(Path("five-model-competition.json").read_text())
+          leaderboard = report["leaderboard"]
+          if len(leaderboard) != 5:
+              raise SystemExit(f"Expected five candidate models, got {len(leaderboard)}")
+          if not report.get("paper_only") or report.get("live_trading") is not False:
+              raise SystemExit("Safety invariant failed: research must remain paper-only")
+          if report.get("common_out_of_sample_observations", 0) < 1:
+              raise SystemExit("No common out-of-sample observations")
+          summary = {
+              "candidate_models": report["candidate_models"],
+              "common_out_of_sample_observations": report["common_out_of_sample_observations"],
+              "market_quote_matched_observations": report["market_quote_matched_observations"],
+              "market_midpoint_baseline": report["market_midpoint_baseline"],
+              "leaderboard": leaderboard,
+              "category_leaderboard": report["category_leaderboard"],
+              "promotion_status": report["promotion_status"],
+              "paper_only": True,
+              "live_trading": False,
+              "execution_simulated": False,
+              "interpretation": (
+                  "Forecast comparison only. Repeated market/cutoff rows are not independent. "
+                  "No model is promoted until it beats the market midpoint on untouched "
+                  "chronological data and passes realistic paper execution after fees, spread, "
+                  "slippage, displayed depth, partial fills, and early exits."
+              ),
+          }
+          Path("five-model-summary.json").write_text(json.dumps(summary, indent=2) + "\n")
+          print(json.dumps(summary, indent=2))
+          PY
+      - name: Upload five-model competition report
+        uses: actions/upload-artifact@v4
+        with:
+          name: kalshi-five-model-competition-${{ inputs.panel_build_run_id }}
+          path: |
+            five-model-competition.json
+            five-model-summary.json
+          if-no-files-found: error
+          retention-days: 30

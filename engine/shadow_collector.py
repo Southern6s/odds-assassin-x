@@ -63,14 +63,50 @@ def collect_shadow_snapshots(
     if not unique:
         raise RuntimeError("No open market tickers were discovered")
 
-    # Stable, reproducible bounded universe; each selected ticker is revisited
-    # on every poll, rather than selecting a new unrelated book each time.
-    selected = list(unique.values())[:max_markets]
+    # Catalog order is not a liquidity signal. Screen a bounded candidate
+    # set first, then keep the markets with real, preferably two-sided depth.
+    # This avoids spending the entire capture window polling empty books.
+    screened: list[tuple[dict[str, Any], dict[str, Any]]] = []
+    screening_failures = 0
+    empty_books = 0
+    screen_limit = min(len(unique), max_markets * 5)
+    for market in list(unique.values())[:screen_limit]:
+        try:
+            book = normalize_orderbook(
+                client.get_market_orderbook(market["ticker"]), market["ticker"]
+            )
+            if not book["has_visible_liquidity"]:
+                empty_books += 1
+                continue
+            screened.append((market, book))
+        except (TypeError, ValueError, RuntimeError, OSError) as exc:
+            screening_failures += 1
+            print(
+                f"shadow_screen_failed ticker={market['ticker']} error={exc}",
+                flush=True,
+            )
+
+    screened.sort(
+        key=lambda item: (
+            item[1]["two_sided_book"],
+            item[1]["top_level_depth"],
+        ),
+        reverse=True,
+    )
+    selected_pairs = screened[:max_markets]
+    if not selected_pairs:
+        raise RuntimeError(
+            f"No visible order-book liquidity found across {screen_limit} candidates; "
+            "increase max_market_pages or retry later"
+        )
+    selected = [market for market, _ in selected_pairs]
+
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
     started = clock()
     deadline = started + duration_seconds
-    polls = written = failures = 0
+    polls = written = 0
+    failures = screening_failures + empty_books
     tickers_with_books: set[str] = set()
 
     while True:

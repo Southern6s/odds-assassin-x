@@ -43,6 +43,7 @@ def evaluate_model_competition(
       * event_only: regularized logistic using only supplied event features
       * combined: event features plus midpoint + quote-presence features
       * bayesian_shrinkage: Beta-binomial calibration by midpoint bucket
+      * boosted_stumps: shallow gradient-boosted decision stumps on event features
 
     Reports both full-sample and quote-matched metrics. Market midpoint itself
     is scored as the unmodified benchmark. Repeated market/cutoff rows are
@@ -72,6 +73,7 @@ def evaluate_model_competition(
             items, names, include_market_features=True, **common
         ),
         "bayesian_shrinkage": evaluate_bayesian_walk_forward(items, **common),
+        "boosted_stumps": evaluate_boosted_stumps_walk_forward(items, names, **common),
     }
 
     prediction_maps: dict[str, dict[tuple[str, str], dict[str, Any]]] = {}

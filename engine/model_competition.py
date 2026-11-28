@@ -12,6 +12,7 @@ from typing import Any, Iterable, Mapping
 
 from .probability import brier_score, log_loss
 from .bayesian_model import evaluate_bayesian_walk_forward
+from .boosted_stumps import evaluate_boosted_stumps_walk_forward
 from .walk_forward import evaluate_walk_forward
 
 
@@ -35,13 +36,14 @@ def evaluate_model_competition(
     test_cutoffs: int = 1,
     step_cutoffs: int | None = None,
 ) -> dict[str, Any]:
-    """Compare logistic variants and a Bayesian shrinkage candidate on common folds.
+    """Compare logistic, Bayesian, and nonlinear candidates on common folds.
 
     Candidates:
       * market_calibrated: logistic calibration of midpoint + quote presence
       * event_only: regularized logistic using only supplied event features
       * combined: event features plus midpoint + quote-presence features
       * bayesian_shrinkage: Beta-binomial calibration by midpoint bucket
+      * boosted_stumps: shallow gradient-boosted decision stumps on event features
 
     Reports both full-sample and quote-matched metrics. Market midpoint itself
     is scored as the unmodified benchmark. Repeated market/cutoff rows are
@@ -71,6 +73,7 @@ def evaluate_model_competition(
             items, names, include_market_features=True, **common
         ),
         "bayesian_shrinkage": evaluate_bayesian_walk_forward(items, **common),
+        "boosted_stumps": evaluate_boosted_stumps_walk_forward(items, names, **common),
     }
 
     prediction_maps: dict[str, dict[tuple[str, str], dict[str, Any]]] = {}

@@ -81,7 +81,32 @@ jobs:
           matched_depth = sum(
               row["depth_snapshot_matched"] for row in report["prediction_rows"]
           )
-          execution = simulate_paper_execution(report["prediction_rows"])
+          if matched_depth:
+              execution = simulate_paper_execution(report["prediction_rows"])
+              execution_simulated = True
+              execution_status = "simulated_with_matched_depth"
+          else:
+              execution = {
+                  "paper_only": True,
+                  "live_trading": False,
+                  "fills_are_estimates": True,
+                  "requires_displayed_depth": True,
+                  "observations": len(report["prediction_rows"]),
+                  "entry_count": 0,
+                  "exit_count": 0,
+                  "realized_net_pnl": 0.0,
+                  "unrealized_net_pnl_estimate": 0.0,
+                  "combined_net_pnl_estimate": 0.0,
+                  "peak_open_risk": 0.0,
+                  "open_positions": [],
+                  "unmarked_open_positions": 0,
+                  "blocked_signal_counts": {"execution_not_evaluated_no_matched_depth": len(report["prediction_rows"])},
+                  "trades": [],
+                  "execution_simulated": False,
+                  "execution_status": "not_evaluated_no_matched_depth",
+              }
+              execution_simulated = False
+              execution_status = "not_evaluated_no_matched_depth"
           Path("paper-execution-report.json").write_text(
               json.dumps(execution, indent=2) + chr(10)
           )
@@ -117,7 +142,8 @@ jobs:
               "depth_max_age_seconds": 300,
               "paper_only": True,
               "live_trading": False,
-              "execution_simulated": True,
+              "execution_simulated": execution_simulated,
+              "execution_status": execution_status,
               "paper_execution": {
                   "entry_count": execution["entry_count"],
                   "exit_count": execution["exit_count"],
